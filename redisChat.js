@@ -13,6 +13,9 @@ const Singleton = function (Class) {
 class ChatBase {
     
     #db;
+    
+    config = {}
+    isSaveLog = true
 
     constructor(config = {}) {
         this.config = config
@@ -41,7 +44,7 @@ class ChatBase {
     system = {
         id: 'system'
     }
-    static async #hash(data) {
+    async #hash(data) {
         const saltRounds = 10
         const salt = await bcrypt.genSalt(saltRounds)
         return await bcrypt.hash(data, salt)
@@ -49,10 +52,6 @@ class ChatBase {
     #returnMsg(ok, msg) {
         console.table({ ok, msg })
         return { ok, msg }
-    }
-    #init() {
-        this.#db = createClient()
-        
     }
     #user(userID) {
         const prefix = `${this.users.prefix}:${userID}`
