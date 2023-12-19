@@ -1,13 +1,6 @@
 import { createClient } from 'redis';
 import bcrypt from 'bcrypt';
-
-// const db = createClient()
-// await db.connect()
-
-// const added = await db.hSet('base', 'states', JSON.stringify(states))
-// console.log(added)
-
-// await db.disconnect()
+import { v5 as uuidv5 } from 'uuid';
 
 // 單例
 const Singleton = function (Class) {
@@ -21,68 +14,145 @@ class ChatBase {
     constructor(config = {}) {
         this.config = config
         this.db = createClient()
-        return (async () => {
-            await this.connect()
-            return this
-        })()
+        this.users = {
+            uuid    : { namespace: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' },
+            prefix  : 'users',
+            default : {
+                avatar: '/'
+            }
+        }
+        this.groups = {
+            uuid    : { namespace: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' },
+            prefix  : 'groups',
+            default : {
+                name      : creator => `${creator} 創建的群組:${Date.now()}`,
+                avatar    : '/',
+                hierarchy : ['invited', 'member', 'administrator', 'creator'],
+            },
+            
+        }
+        this.system = {
+            id: 'system'
+        }
     }
-    async hash(data) {
+    user(userID) {
+        const prefix = `${this.users.prefix}:${userID}`
+
+        const suffix = {
+            info          : 'info', 
+            friends       : 'friends',
+            groups        : 'groups',
+            notification  : 'notification',
+            pendingTasks  : event => event,
+            tasksTracking : event => event,
+        }
+
+        // suffix.forEach(e => prefix.__proto__[e] = `${prefix}:${e}`)
+        Object.entries(suffix).forEach(([key, val]) => {
+            if (typeof val === 'string')        prefix.__proto__[key] = `${prefix}:${key}`
+            else if (typeof val === 'function') prefix.__proto__[key] = (...args) => `${prefix}:${key}:${val(...args)}`
+        })
+        return prefix
+    }
+
+    group(groupID) {
+        const prefix = `${this.groups.prefix}:${groupID}`
+        const suffix = {
+            info          : 'info', 
+            members       : 'members',
+            messages      : msgID => ({read: `${msgID}:read`}),
+            pendingTasks  : event => event,
+            tasksTracking : event => event,
+        }
+
+        Object.entries(suffix).forEach(([key, val]) => {
+            if (typeof val === 'string')        prefix.__proto__[key] = `${prefix}:${key}`
+            else if (typeof val === 'function') prefix.__proto__[key] = (...args) => `${prefix}:${key}:${val(...args)}`
+        })
+        return prefix
+    }
+    groupUUID(...members) {
+        const name = [Date.now(), ...members.sort()]
+        return uuidv5(name, this.groups.uuid.namespace)
+    }
+    static async hash(data) {
         const saltRounds = 10
         const salt = await bcrypt.genSalt(saltRounds)
         const hashed = await bcrypt.hash(data, salt)
         return hashed
     }
+    returnMsg(ok, msg) {
+        console.table({ ok, msg })
+        return { ok, msg }
+    }
     async connect() {
         await this.db.connect()
+        return this
     }
     async disconnect() {
         await this.db.disconnect()
+        return this
     }
     // async checkUserExists(userID) {
     //     return this.db.exists(`users:${userID}`)
     // }
-    async createUser({ name, email, password, avatar, ifExists}) {
+    async createUser({ name, email, password, avatar }) {
 
         const userID = email
-
-        if (await this.db.exists(`users:${userID}`)) return ifExists()
-    
-        const hashedPassword = await this.hash(password)
-    
-        const added = await this.db.hSet(`users:${userID}`, {
-            name, email, hashedPassword, avatar
+        if (await this.db.exists(this.user(userID))) return this.returnMsg(false, '用戶已存在')
+        const added = await this.db.hSet(this.user(userID).info, {
+            name, 
+            email, 
+            hashedPassword : await this.hash(password), 
+            avatar         : avatar ?? this.users.default.avatar,
+            createAt       : Date.now(),
         })
+        if (added <= 0) return this.returnMsg(false, '資料庫出現問題')
+        return this.returnMsg(true, '註冊成功')
     }
     // 通知
-    async notify({ from, to, event, ref }) {
+    async notify({ from, to, event, msg }) {
         const multi = this.db.multi()
         if (!Array.isArray(to)) to = [to]
         to.forEach(async member => {
-            multi.lPush(`${ChatMemberType.users}:${member}:notification`, JSON.stringify({ from, event, ref }))
+            multi.lPush(this.user(member).notification, JSON.stringify({ from, event, msg }))
         })
-        return await multi.exec()
+        const replies = await multi.exec()
+        if (replies.some(e => e < 1)) return this.returnMsg(false, '資料庫出現問題')
+        return this.returnMsg(true, '已通知')
     }
     // 待處理任務
-    async pendingTasks({ memberType, from, to, event, creator = from, createAt }) {
-        return await this.db.hSet(`${memberType}:${to}:pendingTasks:${event}`, from, JSON.stringify({ creator, createAt }))
-    }
+    // async pendingTasks({ memberType, from, to, event, creator = from, createAt }) {
+    //     return await this.db.hSet(`${memberType}:${to}:pendingTasks:${event}`, from, JSON.stringify({ creator, createAt }))
+    // }
     // 任務追蹤
-    async tasksTracking({ memberType, from, to, event, creator = from, createAt }) {
-        return await this.db.hSet(`${memberType}:${from}:tasksTracking:${event}`, to, JSON.stringify({ creator, createAt }))
-    }
+    // async tasksTracking({ memberType, from, to, event, creator = from, createAt }) {
+    //     return await this.db.hSet(`${memberType}:${from}:tasksTracking:${event}`, to, JSON.stringify({ creator, createAt }))
+    // }
     async task({ memberType, from, to, event, creator = from }) {
         const createAt = Date.now()
         if (!Array.isArray(to)) to = [to]
-        to.forEach(async member => {
-            await this.pendingTasks({ memberType, from, to: member, event, creator, createAt })
-            await this.tasksTracking({ memberType, from, to: member, event, creator, createAt })
+        const multi = this.db.multi()
+        const obj =  memberType === ChatMemberType.users ? this.user : this.group
+        to.forEach(member => {
+            multi.hSet(obj(member).pendingTasks(event), from, JSON.stringify({ creator, createAt }))
+            multi.hSet(obj(from).tasksTracking(event), member, JSON.stringify({ creator, createAt }))
         })
+        const replies = await multi.exec()
+        if (replies.some(e => e <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        return this.returnMsg(true, '任務建立')
     }
     async completedTask({ memberType, from, to, event }) {
+        if (!Array.isArray(to)) to = [to]
         const multi = this.db.multi()
-        multi.hDel(`${memberType}:${to}:pendingTasks:${event}`, from)
-        multi.hDel(`${memberType}:${from}:tasksTracking:${event}`, to)
-        return await multi.exec()
+        const obj =  memberType === ChatMemberType.users ? this.user : this.group
+        to.forEach(member => {
+            multi.hDel(obj(member).pendingTasks(event), from)
+            multi.hDel(obj(from).tasksTracking(event), member)
+        })
+        const replies = await multi.exec()
+        if (replies.some(e => e <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        return this.returnMsg(true, '任務完成')
     }
 
     async requestFriendship(from, to) {
@@ -94,110 +164,122 @@ class ChatBase {
         // 根據 status
         const status = ['不是好友', '成為好友', '需要被確認', '等待確認', '拒絕', '被拒絕', '確認', '被確認']
 
-        // 將好友關係存儲在伺服器中
-        // await this.db.zAdd(`${memberType}:${from}:friends`, { score: 2, value: to })
-        // await this.db.zAdd(`${memberType}:${to}:friends`, { score: 3, value: from })
-
         const multi = this.db.multi()
-        multi.hSet(`${memberType}:${from}:friends`, to, JSON.stringify({ status: 2 }))
-        multi.hSet(`${memberType}:${to}:friends`, from, JSON.stringify({ status: 3 }))
-        await multi.exec()
+        // 將好友關係存儲在伺服器中
+        multi.hSet(this.user(from).friends, to, JSON.stringify({ status: 2 }))
+        multi.hSet(this.user(to).friends, from, JSON.stringify({ status: 3 }))
+        const added = await multi.exec()
+        if (added.some(e => e <= 0)) return this.returnMsg(false, '資料庫出現問題')
 
         await this.task({ memberType, from, to, event })
-        await this.notify({ from, to, event: ChatEvents.requestFriendship, ref: null })
+        await this.notify({ from, to, event: ChatEvents.requestFriendship, msg: `來自 ${from} 的好友邀請` })
+        return this.returnMsg(true, '已送出好友邀請')
     }
 
     async confirmFriendship(from, to) {
-        const memberType = ChatMemberType.users
         const event = ChatEvents.requestFriendship
-
-        // FIXME: 好像是可有可無的設定，需要被確認和等待確認在任務中已經有。
-        // await this.db.zAdd(`users:${from}:friends`, { score: 6, value: to })
-        // await this.db.zAdd(`users:${to}:friends`, { score: 7, value: from })
 
         const groupID = await this.createDirectGroup(from, to)
 
         const multi = this.db.multi()
-        multi.hSet(`${memberType}:${from}:friends`, to, { status: 6, groupID })
-        multi.hSet(`${memberType}:${to}:friends`, from, { status: 7, groupID })
-        await multi.exec()
+        multi.hSet(this.user(from).friends, to, JSON.stringify({ status: 6, groupID }))
+        multi.hSet(this.user(to).friends, from, JSON.stringify({ status: 7, groupID }))
+        const added = await multi.exec()
+        if (added.some(e => e <= 0)) return this.returnMsg(false, '資料庫出現問題')
 
         await this.completedTask({ from, to, event })
+        return this.returnMsg(true, '已添加為好友') 
     }
-
     async createDirectGroup(user1, user2) {
-        const groupType = ChatGroupType.directGroups
-        // 生成對稱的 Group ID
-        const sorted = [user1, user2].sort()
-        const GroupID = sorted.join(':')
+        const groupID = this.groupUUID(user1, user2)
 
         const multi = this.db.multi()
-        multi.hSet(`${groupType}:${GroupID}:info`, { createAt: Date.now() })
-        await multi.exec()
-        
-        return GroupID
+        multi.hSet(this.group(groupID).info, { 
+            creator: 'system', 
+            isDirect: true, 
+            createAt: Date.now(),
+        })
+        multi.hSet(this.group(groupID).members, {
+            [user1]: JSON.stringify({some: 'json'}),
+            [user2]: JSON.stringify({some: 'json'})
+        })
+        const added = await multi.exec()
+        if (added.some(e => e <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        return groupID
     }
     async groupInvitation({ from, groupID, invitedMembers = [] }) {
-        const groupType = ChatGroupType.groups
         const event = ChatEvents.groupInvitation
-        // 添加成員
-
-
-
-
-
-        await this.db.zAdd(`${groupType}:${groupID}:members`, invitedMembers.map(invitedMember => { return { score: 0, value: invitedMember } }))
-        await this.task({ from: groupID, to: invitedMembers, event, creator: from })
-        await this.notify({ from: groupID, to: invitedMembers, event })
-    }
-    async createGroup({ name, creator, invitedMembers = [] }) {
-        const groupType = ChatGroupType.groups
-        // FIXME:
-        const groupID = Math.random()
-        
-        // FIXME:
-        const defaultName      = creator + '.group.' + groupID + Math.random()
-        const defaultAvatar    = '/'
-        const defaultHierarchy = ['invited', 'member', 'administrator', 'creator']
-
-        name      ??= defaultName
-        avatar    ??= defaultAvatar
-        hierarchy ??= defaultHierarchy
 
         const multi = this.db.multi()
 
-        // 房間基本資訊
-        multi.hSet(`${groupType}:${groupID}:info`, { name, avatar, creator, createAt: Date.now(), hierarchy: JSON.stringify({...roles})})
-        // 添加建立者為成員
-        multi.zAdd(`${groupType}:${groupID}:members`, { score: 3, value: creator })
+        invitedMembers.forEach(invitedMember => {
+            multi.hSetNX(this.group(groupID).members, invitedMember, JSON.stringify({ status: 0 }))
+        })
+        const added = await multi.exec()
+        if (added.some(e => e <= 0)) return this.returnMsg(false, '有些用戶已經邀請過')
 
-        await multi.exec()
+        await this.task({ from: groupID, to: invitedMembers, event, creator: from })
+        // FIXME: 少了 creator 的信息
+        await this.notify({ from: groupID, to: invitedMembers, event, msg: `${from} 邀請您加入[${groupID}]群組` })
+        return this.returnMsg(true, '已送出群組邀請')
+    }
+    async createGroup({ name, creator, invitedMembers = [] }) {
+
+        const groupID = this.groupUUID(creator)
+        
+        const multi = this.db.multi()
+        // 房間基本資訊
+        multi.hSet(this.group(groupID).info, { 
+            creator  : creator, 
+            name     : name ?? this.groups.default.name(creator), 
+            avatar   : this.groups.default.avatar, 
+            createAt : Date.now(), 
+            hierarchy: JSON.stringify({...this.groups.default.hierarchy}),
+            isDirect : false, 
+        })
+        
+        // 先添加建立者為成員
+        multi.hSet(this.group(groupID).members, creator, JSON.stringify({ status: 3 }))
+
+        multi.hSet(this.user(creator).groups, groupID, JSON.stringify({ some: 'json' }))
+
+        const added = await multi.exec()
+        if (added.some(e => e <= 0)) return this.returnMsg(false, '資料庫出現問題')
 
         await this.groupInvitation({ from: creator, groupID, invitedMembers })
 
         return groupID
     }
+    async confirmGroupInvitation(userID, groupID) {
+        const event = ChatEvents.confirmGroupInvitation
 
-    static msg(from, to, msg, createAt) {
-        return JSON.stringify({ from, to, msg, createAt })
+        const multi = this.db.multi()
+        multi.hSet(this.user(userID).groups, groupID, JSON.stringify({ some: 'json' }))
+
+        multi.hSet(this.group(groupID).members, userID, JSON.stringify({ some: 'json' }))
+        const added = await multi.exec()
+        if (added.some(e => e <= 0)) return this.returnMsg(false, '資料庫出現問題')
+
+        await this.completedTask({ from, to, event })
+        return this.returnMsg(true, '已加入群組') 
     }
-    async sendMsg({ from, to, groupType, msg }) {
+    async sendMsg({ from, to, msg }) {
 
         // 訊息儲存到聊天室
-        const msgID = await this.db.lPush(`${groupType}:${to}:messages`, JSON.stringify({ from, to, msg, createAt: Date.now() }))
-        // 自己先讀了，記錄已讀訊息
-        await this.readMsg({ msgID, from, to, groupType })
+        const msgID = await this.db.lPush(this.group(to).messages, JSON.stringify({ from, to, msg, createAt: Date.now() }))
+        // 自己先已讀訊息
+        await this.readMsg({ msgID, from, to })
 
-        const focus = true
+        const focus = false
         if (focus) {
             // TODO: online send message
         } else {
-            await this.notify({ from, to, event: ChatEvents.msg })
+            await this.notify({ from, to, event: ChatEvents.msg, msg: msg })
         }
         return msgID
     }
-    async readMsg({ msgID, from, to, groupType }) {
-        return await this.db.lPush(`${groupType}:${to}:messages:${msgID}:read`, from)
+    async readMsg({ msgID, from, to }) {
+        return await this.db.lPush(this.group(to).messages(msgID).read, from)
     }
     async quit() {
         return await this.db.quit()
@@ -209,6 +291,7 @@ const ChatEvents = {
     requestFriendship: 'requestFriendship',
     confirmFriendship: 'confirmFriendship',
     groupInvitation: 'groupInvitation',
+    confirmGroupInvitation: 'confirmGroupInvitation',
 }
 
 const ChatMemberType = {
@@ -216,10 +299,10 @@ const ChatMemberType = {
     groups: 'groups',
 }
 
-const ChatGroupType = {
-    directGroups: 'directGroups',
-    groups: 'groups',
-}
+// const ChatGroupType = {
+//     directGroups: 'directGroups',
+//     groups: 'groups',
+// }
 
 // 生成單例
 const Chat = Singleton(ChatBase)
