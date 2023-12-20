@@ -1,6 +1,6 @@
-import { createClient, RedisClientType, RedisClientOptions } from 'redis';
-import bcrypt from 'bcrypt';
-import { v5 as uuidv5 } from 'uuid';
+import { createClient, RedisClientType, RedisClientOptions } from 'redis'
+import bcrypt from 'bcrypt'
+import { v5 as uuidv5 } from 'uuid'
 
 // 單例
 const Singleton = function (Class: any) {
@@ -141,11 +141,16 @@ class ChatBase {
             if (typeof val === 'string')        prefix.__proto__[key] = `${prefix}:${key}`
             else if (typeof val === 'function') prefix.__proto__[key] = (...args: any) => `${prefix}:${key}:${val(...args)}`
         })
+        
         return prefix
+    }
+    userUUID(email: UserDataType['email']) {
+        
     }
     groupUUID(...members: UserIDType[]): GroupIDType {
         const name: string[] = [Date.now().toString(), ...members.sort()]
-        return uuidv5(name, this.groups.uuid.namespace)
+        // FIXME: type of name error
+        return uuidv5(name as any, this.groups.uuid.namespace) as unknown as GroupIDType
     }
     async connect() {
         await this.db.connect()
