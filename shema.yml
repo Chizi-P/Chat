@@ -1,0 +1,34 @@
+user: # userULID = userID
+    name           : string
+    email          : string
+    hashedPassword : string
+    avatar         : string   # url
+    groups         : string[] # groupID[]
+    createAt       : date     # timestamp
+
+group: # groupULID = groupID
+    name     : string
+    creator  : string   # userID
+    createAt : date     # timestamp
+    messages : string[] # msgID[]
+
+message: # msgULID = msgID
+    from     : string   # userID
+    to       : string   # userID | groupID
+    msg      : string   # string | object
+    createAt : date     # timestamp
+
+notification:
+    from     : string   # userID | system
+    to       : string[] # userID[]
+    event    : string
+    msg      : string
+    createAt : date
+
+task:
+    memberType : string
+    from       : string
+    to         : string[]
+    event      : string
+    creator    : string
+    createAt   : date

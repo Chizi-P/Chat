@@ -7,10 +7,12 @@
     "redis": "^4.6.11",
     "redis-om": "^0.4.3",
     "socket.io": "^4.7.2",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "yamljs": "^0.3.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
-    "@types/uuid": "^9.0.7"
+    "@types/uuid": "^9.0.7",
+    "@types/yamljs": "^0.2.34"
   }
 }

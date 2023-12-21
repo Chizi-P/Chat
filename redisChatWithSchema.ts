@@ -1,6 +1,8 @@
 import { createClient, RedisClientType, RedisClientOptions } from 'redis'
 import bcrypt from 'bcrypt'
-import { v5 as uuidv5 } from 'uuid'
+// import { v5 as uuidv5 } from 'uuid'
+import { Repository, Entity, EntityId } from 'redis-om'
+import { createRepositories, RepositoriesType, RepositoriesDataType } from './schema'
 
 // 單例
 function Singleton<T>(Class: new (...args: any[]) => T): (...args: any[]) => T {
@@ -10,34 +12,33 @@ function Singleton<T>(Class: new (...args: any[]) => T): (...args: any[]) => T {
 
 type UserIDType = string
 type GroupIDType = string
-type MessageType = string
 
-interface UserDataType {
+interface UserType extends Entity {
     name     : string
     email    : string
     password : string
-    avatar   : string 
+    avatar   : string
 }
 
-interface GroupDataType {
+interface GroupType extends Entity {
     name: string
     creator: UserIDType
 }
 
-interface MessageDataType {
+interface MessageType extends Entity {
     from: UserIDType
     to: UserIDType | GroupIDType
-    msg: MessageType
+    msg: string
 }
 
-interface NotificationType { 
+interface NotificationType extends Entity { 
     from : UserIDType
     to   : UserIDType | UserIDType[]
     event: ChatEvents
     msg  : MessageType
 }
 
-interface TaskType {
+interface TaskType extends Entity {
     memberType : ChatMemberType
     from       : UserIDType
     to         : UserIDType | UserIDType[]
@@ -64,39 +65,42 @@ class ChatBase {
     private options?: RedisClientOptions
     isSaveLog: boolean = true
 
+    repositories: RepositoriesType
+
     constructor(options? : RedisClientOptions) {
         this.options = options
         this.db = createClient()
         this.db.on('error', err => console.log('Redis Client Error', err))
         this.db.on('connect', () => console.log('Redis client connected'))
         this.db.on('end', () => console.log('Redis client disconnected'))
+
+        this.repositories = createRepositories(this.db)
     }
-    users = {
-        uuid    : { namespace: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' },
-        prefix  : 'users',
-        default : {
-            avatar: '/',
-        },
-    }
-    groups = {
-        uuid    : { namespace: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' },
-        prefix  : 'groups',
-        default : {
-            name      : (creator: string) => `${creator} 創建的群組:${Date.now()}`,
-            avatar    : '/',
-            hierarchy : ['invited', 'member', 'administrator', 'creator'],
-        },
-    }
-    system = {
-        id: 'system'
-    }
+    // users = {
+    //     uuid    : { namespace: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' },
+    //     prefix  : 'users',
+    //     default : {
+    //         avatar: '/',
+    //     },
+    // }
+    // groups = {
+    //     uuid    : { namespace: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' },
+    //     prefix  : 'groups',
+    //     default : {
+    //         name      : (creator: string) => `${creator} 創建的群組:${Date.now()}`,
+    //         avatar    : '/',
+    //         hierarchy : ['invited', 'member', 'administrator', 'creator'],
+    //     },
+    // }
+    // system = {
+    //     id: 'system'
+    // }
 
     // TODO: 
     logger(): void {
         if (!this.logger) return
         // TODO: save log message
     }
-
     async hash(data: string | Buffer): Promise<string> {
         const saltRounds = 10
         const salt = await bcrypt.genSalt(saltRounds)
@@ -124,6 +128,7 @@ class ChatBase {
         })
         return prefix
     }
+
     private group(groupID: GroupIDType): string {
         const prefix = `${this.groups.prefix}:${groupID}`
         const suffix = {
@@ -141,7 +146,7 @@ class ChatBase {
         
         return prefix
     }
-    userUUID(email: UserDataType['email']) {
+    userUUID(email: UserType['email']) {
         
     }
     groupUUID(...members: UserIDType[]): GroupIDType {
@@ -157,18 +162,22 @@ class ChatBase {
         await this.db.disconnect()
         return this
     }
-    async createUser(userData: UserDataType) {
+    async createUser(userData: UserType) {
         const { name, email, password, avatar } = userData
-        const userID: string = email
-        if (await this.db.exists(this.user(userID))) return this.returnMsg(false, '用戶已存在')
-        const added = await this.db.hSet(this.user(userID).info, {
+
+        let saveUserData: RepositoriesDataType['user'] = {
             name, 
             email, 
-            hashedPassword : await this.hash(password), 
-            avatar         : avatar ?? this.users.default.avatar,
-            createAt       : Date.now(),
-        })
-        if (added <= 0) return this.returnMsg(false, '資料庫出現問題')
+            hashedPassword: await this.hash(password),
+            avatar,
+            groups: [],
+            createAt: new Date(),
+        }
+
+        if (await this.repositories.user.search().where('email').eq(email).count() > 0) return this.returnMsg(false, '用戶已存在')
+        saveUserData = await this.repositories.user.save(saveUserData)
+        // const userID = saveUserData[EntityId] as UserIDType
+
         return this.returnMsg(true, '註冊成功')
     }
     // 通知
@@ -305,7 +314,7 @@ class ChatBase {
         return this.returnMsg(true, '已送出群組邀請')
     }
 
-    async createGroup(groupData: GroupDataType, invitedMembers: UserIDType[] = []) {
+    async createGroup(groupData: GroupType, invitedMembers: UserIDType[] = []) {
         const { name, creator } = groupData
         const groupID = this.groupUUID(creator)
         
