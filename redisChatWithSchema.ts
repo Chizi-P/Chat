@@ -12,39 +12,11 @@ function Singleton<T>(Class: new (...args: any[]) => T): (...args: any[]) => T {
 
 type UserIDType = string
 type GroupIDType = string
-
-interface UserType extends Entity {
-    name     : string
-    email    : string
-    password : string
-    avatar   : string
-}
-
-interface GroupType extends Entity {
-    name: string
-    creator: UserIDType
-}
-
-interface MessageType extends Entity {
-    from: UserIDType
-    to: UserIDType | GroupIDType
-    msg: string
-}
-
-interface NotificationType extends Entity { 
-    from : UserIDType
-    to   : UserIDType | UserIDType[]
-    event: ChatEvents
-    msg  : MessageType
-}
-
-interface TaskType extends Entity {
-    memberType : ChatMemberType
-    from       : UserIDType
-    to         : UserIDType | UserIDType[]
-    event      : ChatEvents
-    creator?   : UserIDType
-}
+type UserType         = RepositoriesDataType['user']
+type GroupType        = RepositoriesDataType['group']
+type MessageType      = RepositoriesDataType['message']
+type NotificationType = RepositoriesDataType['notification']
+type TaskType         = RepositoriesDataType['task']
 
 enum ChatEvents {
     msg                    = 'msg',
@@ -70,9 +42,9 @@ class ChatBase {
     constructor(options? : RedisClientOptions) {
         this.options = options
         this.db = createClient()
-        this.db.on('error', err => console.log('Redis Client Error', err))
+        this.db.on('error',  err => console.log('Redis Client Error', err))
         this.db.on('connect', () => console.log('Redis client connected'))
-        this.db.on('end', () => console.log('Redis client disconnected'))
+        this.db.on('end',     () => console.log('Redis client disconnected'))
 
         this.repositories = createRepositories(this.db)
     }
@@ -165,13 +137,14 @@ class ChatBase {
     async createUser(userData: UserType) {
         const { name, email, password, avatar } = userData
 
-        let saveUserData: RepositoriesDataType['user'] = {
+        let saveUserData: UserType = {
             name, 
             email, 
             hashedPassword: await this.hash(password),
             avatar,
-            groups: [],
             createAt: new Date(),
+            groups: [],
+            notifications: []
         }
 
         if (await this.repositories.user.search().where('email').eq(email).count() > 0) return this.returnMsg(false, '用戶已存在')

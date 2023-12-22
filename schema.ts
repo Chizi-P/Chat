@@ -22,8 +22,9 @@ const schemasArgs = {
         email          : { type: 'string'},
         hashedPassword : { type: 'string' },
         avatar         : { type: 'string' },
-        groups         : { type: 'string[]' },
         createAt       : { type: 'date' },
+        groups         : { type: 'string[]' },
+        notifications  : { type: 'string[]' }
     },
     group: {
         name     : { type: 'string' },
@@ -42,7 +43,7 @@ const schemasArgs = {
         from     : { type: 'string' },
         to       : { type: 'string[]' },
         event    : { type: 'string' },
-        msgID      : { type: 'string' },
+        msgID    : { type: 'string' },
         createAt : { type: 'date' },
     },
     task: {
@@ -66,7 +67,7 @@ type ExtractType<T> =
     T extends TextFieldDefinition        ? string           :
     unknown
 
-type GeneratedTypes<T> = {
+type GeneratedTypes<T extends Record<string, SchemaDefinition>> = {
     [Key in keyof T]: {
         [Field in keyof T[Key]]: ExtractType<T[Key][Field]>
     }
