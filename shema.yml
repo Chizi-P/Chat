@@ -27,8 +27,8 @@ notification:
 
 task:
     memberType : string
-    from       : string
-    to         : string[]
+    from       : string   # userID
+    to         : string[] # userID[]
     event      : string
-    creator    : string
-    createAt   : date
+    creator    : string   # userID
+    createAt   : date     # timestamp

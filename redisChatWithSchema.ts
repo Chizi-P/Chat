@@ -1,7 +1,7 @@
 import { createClient, RedisClientType, RedisClientOptions } from 'redis'
 import bcrypt from 'bcrypt'
 // import { v5 as uuidv5 } from 'uuid'
-import { Repository, Entity, EntityId } from 'redis-om'
+import { Repository, Entity, EntityData, EntityId, EntityKeyName } from 'redis-om'
 import { createRepositories, RepositoriesType, RepositoriesDataType } from './schema'
 
 // 單例
@@ -10,34 +10,39 @@ function Singleton<T>(Class: new (...args: any[]) => T): (...args: any[]) => T {
     return (...args: any[]): T => instance || (instance = new Class(...args))
 }
 
-type UserIDType = string
-type GroupIDType = string
-type UserType         = RepositoriesDataType['user']
-type GroupType        = RepositoriesDataType['group']
-type MessageType      = RepositoriesDataType['message']
-type NotificationType = RepositoriesDataType['notification']
-type TaskType         = RepositoriesDataType['task']
+type UserID         = string
+type GroupID        = string
+type MessageID      = string
+type NotificationID = string
+type TaskID         = string
+type User           = RepositoriesDataType['user']
+type Group          = RepositoriesDataType['group']
+type Message        = RepositoriesDataType['message']
+type Notification   = RepositoriesDataType['notification']
+type Task           = RepositoriesDataType['task']
 
 enum ChatEvents {
-    msg                    = 'msg',
-    requestFriendship      = 'requestFriendship',
-    confirmFriendship      = 'confirmFriendship',
-    groupInvitation        = 'groupInvitation',
-    confirmGroupInvitation = 'confirmGroupInvitation',
+    SendMessage            = 'sendMessage',         // 發送訊息
+    FriendInvitation       = 'friendInvitation',    // 好友邀請
+    FriendConfirmation     = 'friendConfirmation',  // 確認好友關係
+    GroupInvitation        = 'groupInvitation',     // 群組邀請
+    GroupConfirmation      = 'groupConfirmation',   // 確認加入群組
 }
 
-enum ChatMemberType {
-    users  = 'users',
-    groups = 'groups',
-}
+// enum ChatMemberType {
+//     users  = 'users',
+//     groups = 'groups',
+// }
 
+
+// TODO: 修改方法的回傳
 class ChatBase {
     
     private db: RedisClientType
     private options?: RedisClientOptions
     isSaveLog: boolean = true
 
-    repositories: RepositoriesType
+    private repositories: RepositoriesType
 
     constructor(options? : RedisClientOptions) {
         this.options = options
@@ -68,12 +73,14 @@ class ChatBase {
     //     id: 'system'
     // }
 
-    // TODO: 
-    logger(): void {
-        if (!this.logger) return
-        // TODO: save log message
+    private logger(log: string): void {
+        if (!this.isSaveLog) return
+        this.db.lPush('logs', JSON.stringify({
+            log,
+            createAt: Date.now()
+        }))
     }
-    async hash(data: string | Buffer): Promise<string> {
+    private async hash(data: string | Buffer): Promise<string> {
         const saltRounds = 10
         const salt = await bcrypt.genSalt(saltRounds)
         return await bcrypt.hash(data, salt)
@@ -81,50 +88,6 @@ class ChatBase {
     private returnMsg(ok: boolean, msg: string): { ok: boolean, msg: string } {
         console.table({ ok, msg })
         return { ok, msg }
-    }
-    private user(userID: UserIDType): string {
-        const prefix = `${this.users.prefix}:${userID}`
-
-        const suffix = {
-            info          : 'info', 
-            friends       : 'friends',
-            groups        : 'groups',
-            notification  : 'notification',
-            pendingTasks  : (event: string): string => event,
-            tasksTracking : (event: string): string => event,
-        }
-
-        Object.entries(suffix).forEach(([key, val]) => {
-            if      (typeof val === 'string')   prefix.__proto__[key] = `${prefix}:${key}`
-            else if (typeof val === 'function') prefix.__proto__[key] = (...args: any)=> `${prefix}:${key}:${val(...args)}`
-        })
-        return prefix
-    }
-
-    private group(groupID: GroupIDType): string {
-        const prefix = `${this.groups.prefix}:${groupID}`
-        const suffix = {
-            info          : 'info', 
-            members       : 'members',
-            messages      : (msgID: string): object => ({read: `${msgID}:read`}),
-            pendingTasks  : (event: string): string => event,
-            tasksTracking : (event: string): string => event,
-        }
-
-        Object.entries(suffix).forEach(([key, val]) => {
-            if (typeof val === 'string')        prefix.__proto__[key] = `${prefix}:${key}`
-            else if (typeof val === 'function') prefix.__proto__[key] = (...args: any) => `${prefix}:${key}:${val(...args)}`
-        })
-        
-        return prefix
-    }
-    userUUID(email: UserType['email']) {
-        
-    }
-    groupUUID(...members: UserIDType[]): GroupIDType {
-        const name: string[] = [Date.now().toString(), ...members.sort()]
-        // FIXME: type of name error
-        return uuidv5(name as any, this.groups.uuid.namespace) as unknown as GroupIDType
     }
     async connect() {
         await this.db.connect()
@@ -134,216 +97,265 @@ class ChatBase {
         await this.db.disconnect()
         return this
     }
-    async createUser(userData: UserType) {
-        const { name, email, password, avatar } = userData
+    async createUser(name: string, email: string, password: string, otherData?: Record<string, any>) {
+        // const { name, email, password, avatar } = userData
 
-        let saveUserData: UserType = {
+        if (await this.repositories.user.search().where('email').eq(email as string).count() > 0) return this.returnMsg(false, '用戶已存在')
+
+        let user = await this.repositories.user.save({
             name, 
             email, 
             hashedPassword: await this.hash(password),
-            avatar,
-            createAt: new Date(),
-            groups: [],
-            notifications: []
-        }
+            createAt      : new Date(),
+            friends       : [],
+            groups        : [],
+            notifications : [],
+            tasks         : [],
+            // tracking   : [], // TODO: 試試看 tracking 沒有輸入會有什麼結果
+            ...otherData ?? {},
+        }) as User
 
-        if (await this.repositories.user.search().where('email').eq(email).count() > 0) return this.returnMsg(false, '用戶已存在')
-        saveUserData = await this.repositories.user.save(saveUserData)
-        // const userID = saveUserData[EntityId] as UserIDType
+        // FIXME: return userID
+        const userID = user[EntityId]!
 
         return this.returnMsg(true, '註冊成功')
     }
+
     // 通知
-    async notify(notification: NotificationType) {
-        const { from, event, msg } = notification
-        let to = notification.to
-        to = Array.isArray(to) ? to : [to]
-        const multi = this.db.multi()
-        if (!Array.isArray(to)) to = [to]
-        to.forEach(async member => {
-            multi.lPush(this.user(member).notification, JSON.stringify({ from, event, msg }))
-        })
-        const replies = await multi.exec()
-        if (replies.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+    async notify(notificationData: { from: UserID, to: UserID[], content: string, event: string }) {
+        const { from, to, event, content } = notificationData
+        // let to = notification.to
+        // to = Array.isArray(to) ? to : [to]
+        // const multi = this.db.multi()
+        // to.forEach(async member => {
+        //     multi.lPush(this.user(member).notification, JSON.stringify({ from, event, msg }))
+        // })
+        // const replies = await multi.exec()
+        // if (replies.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+
+        let notification = await this.repositories.notification.save({
+            from, 
+            to,
+            event,
+            content,
+            createAt: new Date()
+        }) as Notification
+
+        const notificationID = notification[EntityId] as NotificationID
+
+        let user = await this.repositories.user.fetch(from) as User
+
+
+        user.notifications.push(notificationID)
+        user = await this.repositories.user.save(user) as User
+
         return this.returnMsg(true, '已發送通知')
     }
-    // 待處理任務
-    // async pendingTasks({ memberType, from, to, event, creator = from, createAt }) {
-    //     return await this.db.hSet(`${memberType}:${to}:pendingTasks:${event}`, from, JSON.stringify({ creator, createAt }))
-    // }
-    // 任務追蹤
-    // async tasksTracking({ memberType, from, to, event, creator = from, createAt }) {
-    //     return await this.db.hSet(`${memberType}:${from}:tasksTracking:${event}`, to, JSON.stringify({ creator, createAt }))
-    // }
-    async task(task: TaskType) {
-        const { memberType, from, event } = task
-        const creator = task.creator ?? from
-        let to = task.to
-        to = Array.isArray(to) ? to : [to]
-        const createAt = Date.now()
-        const multi = this.db.multi()
-        const obj =  memberType === ChatMemberType.users ? this.user : this.group
-        to.forEach(member => {
-            multi.hSet(obj(member).pendingTasks(event), from, JSON.stringify({ creator, createAt }))
-            multi.hSet(obj(from).tasksTracking(event), member, JSON.stringify({ creator, createAt }))
+
+    async task(taskData: { from: UserID, to: UserID, event: ChatEvents, creator?: UserID, content?: string }): Promise<ReturnType<typeof this.returnMsg>>
+    async task(taskData: { from: UserID, to: UserID[], event: ChatEvents, creator?: UserID, content?: string }): Promise<ReturnType<typeof this.returnMsg>>
+    async task(taskData: { from: UserID, to: UserID | UserID[], event: ChatEvents, creator?: UserID, content?: string }): Promise<ReturnType<typeof this.returnMsg>> {
+        const { from, event, content } = taskData
+        let { to, creator } = taskData
+        to = Array.isArray(to) ? to: [to]
+        creator = creator ?? from
+
+        let task = await this.repositories.task.save({
+            from,
+            to,
+            event,
+            creator,
+            createAt: new Date(),
+            content: content ?? '',
+        }) as Task
+
+        // FIXME: return taskID
+        const taskID = task[EntityId]!
+
+        to.forEach(async e => {
+            let toUser = await this.repositories.user.fetch(e) as User
+            toUser.tasks.push(taskID)
+            toUser = await this.repositories.user.save(toUser) as User
         })
-        const replies = await multi.exec()
-        if (replies.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+
+        let fromUser = await this.repositories.user.fetch(from) as User
+        fromUser.tracking.push(taskID)
+        fromUser = await this.repositories.user.save(fromUser) as User
+
         return this.returnMsg(true, '任務建立')
     }
-    async completedTask(task: TaskType) {
-        const { memberType, from, event } = task
-        let to = task.to
-        to = Array.isArray(to) ? to : [to]
-        const multi = this.db.multi()
-        const obj =  memberType === ChatMemberType.users ? this.user : this.group
-        to.forEach(member => {
-            multi.hDel(obj(member).pendingTasks(event), from)
-            multi.hDel(obj(from).tasksTracking(event), member)
+    async completedTask(taskID: TaskID) {
+        let task = await this.repositories.task.fetch(taskID) as Task
+
+        let fromUser = await this.repositories.user.fetch(task.from) as User
+        
+        const index = fromUser.tracking.indexOf(taskID)
+        if (index >= 0) {
+            fromUser.tracking.splice(index, 1)
+            await this.repositories.user.save(fromUser)
+        }
+        // FIXME: 如果沒有對應的taskID
+        
+        let toUsers = await this.repositories.user.fetch(task.to) as Required<User>[]
+        toUsers.forEach(async to => {
+            const index = to.tasks.indexOf(taskID)
+            if (index >= 0) {
+                to.tasks.splice(index, 1)
+                await this.repositories.user.save(to)
+            }
+            // TODO: 如果沒有對應的taskID
         })
-        const replies = await multi.exec()
-        if (replies.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        await this.repositories.task.remove(taskID)
+        
         return this.returnMsg(true, '任務完成')
     }
 
-    async requestFriendship(from: UserIDType, to: UserIDType) {
-        const memberType = ChatMemberType.users
-        const event      = ChatEvents.requestFriendship
+    async FriendInvitation(from: UserID, to: UserID) {
 
-        // if (!await this.db.exists(`users:${to}`)) socket.emit('msg', { ok: false, msg: '用戶不存在' })
+        await this.task({
+            from, 
+            to: to, 
+            event: ChatEvents.FriendInvitation
+        })
+        // TODO: 通知
+        // await this.notify({ from, to, event: ChatEvents.FriendInvitation, msg: `來自 ${from} 的好友邀請` })
 
-        // 根據 status
-        const status = ['不是好友', '成為好友', '需要被確認', '等待確認', '拒絕', '被拒絕', '確認', '被確認']
-
-        const multi = this.db.multi()
-        // 將好友關係存儲在伺服器中
-        multi.hSet(this.user(from).friends, to, JSON.stringify({ status: 2 }))
-        multi.hSet(this.user(to).friends, from, JSON.stringify({ status: 3 }))
-        const added = await multi.exec()
-        if (added.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
-
-        await this.task({ memberType, from, to, event })
-        await this.notify({ from, to, event: ChatEvents.requestFriendship, msg: `來自 ${from} 的好友邀請` })
         return this.returnMsg(true, '已送出好友邀請')
     }
     
+    async FriendConfirmation(from: UserID, to: UserID) {
 
-    async confirmFriendship(from: UserIDType, to: UserIDType) {
-        const memberType = ChatMemberType.users
-        const event      = ChatEvents.requestFriendship
+        await this.task({
+            from, 
+            to    : to, 
+            event : ChatEvents.FriendConfirmation
+        })
 
+        // TODO: 還沒檢視完成
         const groupID = await this.createDirectGroup(from, to)
 
-        const multi = this.db.multi()
-        multi.hSet(this.user(from).friends, to, JSON.stringify({ status: 6, groupID }))
-        multi.hSet(this.user(to).friends, from, JSON.stringify({ status: 7, groupID }))
-        const added = await multi.exec()
-        if (added.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        // const multi = this.db.multi()
+        // multi.hSet(this.user(from).friends, to, JSON.stringify({ status: 6, groupID }))
+        // multi.hSet(this.user(to).friends, from, JSON.stringify({ status: 7, groupID }))
+        // const added = await multi.exec()
+        // if (added.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
 
-        await this.completedTask({ memberType, from, to, event })
+        // await this.completedTask(taskID)
+
         return this.returnMsg(true, '已添加為好友') 
     }
+    async createDirectGroup(user1: UserID, user2: UserID): Promise<GroupID> {
 
-    async createDirectGroup(user1: UserIDType, user2: UserIDType): Promise<GroupIDType> {
-        const groupID = this.groupUUID(user1, user2)
+        let group = await this.repositories.group.save({
+            creator  : 'system',
+            createAt : new Date(),
+            members  : [user1, user2],
+            messages : [],
+            isDirect : true
+        }) as Group
 
-        const multi = this.db.multi()
-        multi.hSet(this.group(groupID).info, { 
-            creator: this.system.id, 
-            isDirect: true, 
-            createAt: Date.now(),
-        })
-        multi.hSet(this.group(groupID).members, {
-            [user1]: JSON.stringify({some: 'json'}),
-            [user2]: JSON.stringify({some: 'json'})
-        })
-        const added = await multi.exec()
-        if (added.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        const groupID = group[EntityId] as GroupID
+
         return groupID
     }
 
-    async groupInvitation(from: UserIDType, groupID: GroupIDType, invitedMembers: UserIDType[]) {
+    async groupInvitation(inviter: UserID, groupID: GroupID, invitedMembers: UserID[]) {
         if (!invitedMembers.length) return
-        const memberType = ChatMemberType.groups
-        const event = ChatEvents.groupInvitation
 
-        const multi = this.db.multi()
-
-        invitedMembers.forEach(invitedMember => {
-            multi.hSetNX(this.group(groupID).members, invitedMember, JSON.stringify({ status: 0 }))
+        await this.task({
+            creator : inviter,
+            from    : groupID,
+            to      : invitedMembers, 
+            event   : ChatEvents.GroupInvitation,
         })
-        const added = await multi.exec()
-        if (added.some(e => e as number <= 0)) return this.returnMsg(false, '有些用戶已經邀請過')
-
-        await this.task({ 
-            memberType,
-            from    : groupID, 
-            to      : invitedMembers,
-            event,
-            creator : from 
-        })
-        // FIXME: 少了 creator 的信息
-        await this.notify({ from: groupID, to: invitedMembers, event, msg: `${from} 邀請您加入[${groupID}]群組` })
+        // TODO: 通知
+        // await this.notify({ from: groupID, to: invitedMembers, event, msg: `${from} 邀請您加入[${groupID}]群組` })
+        
         return this.returnMsg(true, '已送出群組邀請')
     }
 
-    async createGroup(groupData: GroupType, invitedMembers: UserIDType[] = []) {
-        const { name, creator } = groupData
-        const groupID = this.groupUUID(creator)
+    async createGroup(name: string, creator: UserID, avatar: string, invitedMembers: UserID[] = []): Promise<GroupID> {
         
-        const multi = this.db.multi()
-        // 房間基本資訊
-        multi.hSet(this.group(groupID).info, { 
-            creator  : creator, 
-            name     : name ?? this.groups.default.name(creator), 
-            avatar   : this.groups.default.avatar, 
-            createAt : Date.now(), 
-            hierarchy: JSON.stringify({...this.groups.default.hierarchy}),
-            isDirect : false, 
-        })
-        
-        // 先添加建立者為成員
-        multi.hSet(this.group(groupID).members, creator, JSON.stringify({ status: 3 }))
-        multi.hSet(this.user(creator).groups, groupID, JSON.stringify({ some: 'json' }))
+        let group = await this.repositories.group.save({
+            name,
+            creator,
+            createAt : new Date(),
+            avatar,
+            members  : [creator],
+            messages : [],
+            isDirect : false
+        }) as Group
 
-        const added = await multi.exec()
-        if (added.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        const groupID = group[EntityId] as GroupID
+        
+        // 儲存到 creator 自己的資料中
+        let user = await this.repositories.user.fetch(creator) as User
+        user.groups.push(groupID)
+        user = await this.repositories.user.save(user) as User
 
         await this.groupInvitation(creator, groupID, invitedMembers)
 
         return groupID
     }
-    async confirmGroupInvitation(userID: UserIDType, groupID: GroupIDType) {
-        const memberType = ChatMemberType.groups
-        const event = ChatEvents.confirmGroupInvitation
+    async groupConfirmation(userID: UserID, groupID: GroupID) {
 
-        const multi = this.db.multi()
-        multi.hSet(this.user(userID).groups, groupID, JSON.stringify({ some: 'json' }))
+        await this.task({
+            creator : userID,
+            from    : userID,
+            to      : groupID, 
+            event   : ChatEvents.GroupConfirmation,
+        })
 
-        multi.hSet(this.group(groupID).members, userID, JSON.stringify({ some: 'json' }))
-        const added = await multi.exec()
-        if (added.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        let user = await this.repositories.user.fetch(userID) as User
+        user.groups.push(groupID)
+        user = await this.repositories.user.save(user) as User
 
-        await this.completedTask({ memberType, from: userID, to: groupID, event })
+        let group = await this.repositories.group.fetch(groupID) as Group
+        group.members.push(userID)
+        group = await this.repositories.group.save(group) as Group
+
+        // TODO: completed task （需確認）
+        // await this.completedTask()
+
         return this.returnMsg(true, '已加入群組') 
     }
-    async sendMsg(msgData: MessageDataType): Promise<number> {
-        const { from, to, msg } = msgData
-        // 訊息儲存到聊天室
-        const msgID = await this.db.lPush(this.group(to).messages, JSON.stringify({ from, to, msg, createAt: Date.now() }))
-        // 自己先已讀訊息
-        await this.readMsg({ msgID, from, to })
+    async sendMsg(from: UserID, to: GroupID, content: string): Promise<MessageID> {
 
-        const focus = false
-        if (focus) {
-            // TODO: online send message
-        } else {
-            await this.notify({ from, to, event: ChatEvents.msg, msg: msg })
-        }
-        return msgID
+        let message = await this.repositories.message.save({
+            from,
+            to,
+            content,
+            createAt: new Date(),
+            reader: [from]
+        }) as Message
+
+        const messageID = message[EntityId] as MessageID
+
+        // FIXME: 兩個方法
+        // 1: 直接寫到 group 的 messages 中
+        let group = await this.repositories.group.fetch(to) as Group
+        group.messages.push(messageID)
+        group = await this.repositories.group.save(group) as Group
+
+        // TODO: 通知
+
+        // 2: 寫成 task，等第一個用戶在線再寫到 group 的 messages 中
+        await this.task({
+            from,
+            to,
+            creator: from,
+            event: ChatEvents.SendMessage,
+            content
+        })
+        // TODO: 通知
+        // await this.notify({ from, to, event: ChatEvents.msg, msg: msg })
+        
+        return messageID
     }
-    async readMsg({ msgID, from, to }) {
-        return await this.db.lPush(this.group(to).messages(msgID).read, from)
+    async readMsg(reader: UserID, messageID: MessageID) {
+        let message = await this.repositories.message.fetch(messageID) as Message
+        message.readers.push(reader)
+        message = await this.repositories.message.save(message) as Message
     }
     async quit() {
         return await this.db.quit()

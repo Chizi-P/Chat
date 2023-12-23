@@ -19,40 +19,51 @@ import type {
 const schemasArgs = {
     user: {
         name           : { type: 'string' },
-        email          : { type: 'string'},
-        hashedPassword : { type: 'string' },
-        avatar         : { type: 'string' },
-        createAt       : { type: 'date' },
-        groups         : { type: 'string[]' },
-        notifications  : { type: 'string[]' }
+        email          : { type: 'string'},    // unique email
+        hashedPassword : { type: 'string' },   // hasded password
+        avatar         : { type: 'string' },   // image src url
+        createAt       : { type: 'date' },     // timestamp
+        friends        : { type: 'string[]' }, // userID[]
+        groups         : { type: 'string[]' }, // groupID[]
+        notifications  : { type: 'string[]' }, // notifID[]
+        tasks          : { type: 'string[]' }, // taskID[]
+        tracking       : { type: 'string[]' }, // taskID[] 可以用搜尋的方法取代他
+        isOnline       : { type: 'boolean' },  // 是否在線
+        lastOnlineTime : { type: 'date' },     // date
     },
     group: {
-        name     : { type: 'string' },
-        creator  : { type: 'string' },
-        createAt : { type: 'date' },
-        messages : { type: 'string[]' },
+        name      : { type: 'string' },
+        creator   : { type: 'string' },   // userID
+        avatar    : { type: 'string' },   // image src url
+        createAt  : { type: 'date' },     // timestamp
+        members   : { type: 'string[]' }, // userID[]
+        messages  : { type: 'string[]' }, // msgID[]
+        isDirect  : { type: 'boolean'}    // 是否為兩人的一對一聊天室
+        // hierarchy : {}
     },
     message: {
-        from     : { type: 'string' },
-        to       : { type: 'string' },
-        msg      : { type: 'string' },
-        createAt : { type: 'date' },
+        from     : { type: 'string' },   // userID
+        to       : { type: 'string' },   // groupID
+        content  : { type: 'string' },   // msg content | JSON
+        createAt : { type: 'date' },     // timestamp
+        readers  : { type: 'string[]' }  // userID[]
     },
-
     notification: {
-        from     : { type: 'string' },
-        to       : { type: 'string[]' },
-        event    : { type: 'string' },
-        msgID    : { type: 'string' },
-        createAt : { type: 'date' },
+        from     : { type: 'string' },   // userID
+        to       : { type: 'string[]' }, // userID
+        event    : { type: 'string' },   // 暫時不用
+        content  : { type: 'string' },   // 附帶要顯示的信息
+        openURL  : { type: 'string' },   // url
+        createAt : { type: 'date' },     // userID | system
     },
     task: {
-        memberType : { type: 'string' },
-        from       : { type: 'string' },
-        to         : { type: 'string[]' },
-        event      : { type: 'string' },
-        creator    : { type: 'string' },
-        createAt   : { type: 'date' },
+        // memberType : { type: 'string' },   // 
+        from       : { type: 'string' },   // userID | groupID
+        to         : { type: 'string[]' }, // userID
+        event      : { type: 'string' },   // 
+        creator    : { type: 'string' },   // userID
+        createAt   : { type: 'date' },     // timestamp
+        content    : { type: 'string' },   // string | JSON
     },
 } as const
 
@@ -70,7 +81,7 @@ type ExtractType<T> =
 type GeneratedTypes<T extends Record<string, SchemaDefinition>> = {
     [Key in keyof T]: {
         [Field in keyof T[Key]]: ExtractType<T[Key][Field]>
-    }
+    } & Partial<Entity> // FIXME: & Partial<Entity>
 }
 
 type RepositoriesDataType = GeneratedTypes<typeof schemasArgs>
