@@ -29,29 +29,59 @@ enum ChatEvents {
     GroupConfirmation      = 'groupConfirmation',   // 確認加入群組
 }
 
-// enum ChatMemberType {
-//     users  = 'users',
-//     groups = 'groups',
-// }
-
+type ChatRegisterEvent = Record<string, {
+    action?: (this: ChatBase, taskID: TaskID) => Promise<any>,
+    finishAction?: (this: ChatBase, taskID: TaskID) => Promise<any>,
+}>
 
 // TODO: 修改方法的回傳
+// TODO: 通知
 class ChatBase {
     
     private db: RedisClientType
     private options?: RedisClientOptions
     isSaveLog: boolean = true
 
+    private events: ChatRegisterEvent
+
     private repositories: RepositoriesType
 
     constructor(options? : RedisClientOptions) {
         this.options = options
+        this.events = {
+            [ChatEvents.FriendInvitation]: {
+                async action(this, taskID) {
+                    console.log('FriendInvitation action')
+                },
+                async finishAction (this, taskID) {
+                    let task = await this.repositories.task.fetch(taskID) as Task
+                    const from = task.from
+                    const to   = task.to[0]
+
+                    const groupID = await this.createDirectGroup(from, to)
+            
+                    let fromUser = await this.repositories.user.fetch(from) as User
+                    fromUser.friends.push(groupID)
+                    await this.repositories.user.save(fromUser) as User
+            
+                    let toUser = await this.repositories.user.fetch(to) as User
+                    toUser.friends.push(groupID)
+                    await this.repositories.user.save(toUser) as User
+
+                    console.log('FriendInvitation finish')
+                }
+            }
+        }
+
         this.db = createClient()
         this.db.on('error',  err => console.log('Redis Client Error', err))
         this.db.on('connect', () => console.log('Redis client connected'))
         this.db.on('end',     () => console.log('Redis client disconnected'))
 
         this.repositories = createRepositories(this.db)
+    }
+    registerEvent(name: keyof ChatRegisterEvent, eventData: ChatRegisterEvent[keyof ChatRegisterEvent]) {
+        this.events[name] = eventData
     }
     // users = {
     //     uuid    : { namespace: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' },
@@ -98,7 +128,6 @@ class ChatBase {
         return this
     }
     async createUser(name: string, email: string, password: string, otherData?: Record<string, any>) {
-        // const { name, email, password, avatar } = userData
 
         if (await this.repositories.user.search().where('email').eq(email as string).count() > 0) return this.returnMsg(false, '用戶已存在')
 
@@ -122,21 +151,13 @@ class ChatBase {
     }
 
     // 通知
-    async notify(notificationData: { from: UserID, to: UserID[], content: string, event: string }) {
-        const { from, to, event, content } = notificationData
-        // let to = notification.to
-        // to = Array.isArray(to) ? to : [to]
-        // const multi = this.db.multi()
-        // to.forEach(async member => {
-        //     multi.lPush(this.user(member).notification, JSON.stringify({ from, event, msg }))
-        // })
-        // const replies = await multi.exec()
-        // if (replies.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+    async notify(notificationData: { from: UserID, to: UserID[], content: string, eventType: string }) {
+        const { from, to, eventType, content } = notificationData
 
         let notification = await this.repositories.notification.save({
             from, 
             to,
-            event,
+            eventType,
             content,
             createAt: new Date()
         }) as Notification
@@ -145,17 +166,16 @@ class ChatBase {
 
         let user = await this.repositories.user.fetch(from) as User
 
-
         user.notifications.push(notificationID)
         user = await this.repositories.user.save(user) as User
 
         return this.returnMsg(true, '已發送通知')
     }
 
-    async task(taskData: { from: UserID, to: UserID, event: ChatEvents, creator?: UserID, content?: string }): Promise<ReturnType<typeof this.returnMsg>>
-    async task(taskData: { from: UserID, to: UserID[], event: ChatEvents, creator?: UserID, content?: string }): Promise<ReturnType<typeof this.returnMsg>>
-    async task(taskData: { from: UserID, to: UserID | UserID[], event: ChatEvents, creator?: UserID, content?: string }): Promise<ReturnType<typeof this.returnMsg>> {
-        const { from, event, content } = taskData
+    async task(taskData: { from: UserID, to: UserID, eventType: ChatEvents, creator?: UserID, content?: string }): Promise<any>
+    async task(taskData: { from: UserID, to: UserID[], eventType: ChatEvents, creator?: UserID, content?: string }): Promise<any>
+    async task(taskData: { from: UserID, to: UserID | UserID[], eventType: ChatEvents, creator?: UserID, content?: string }): Promise<any> {
+        const { from, eventType, content } = taskData
         let { to, creator } = taskData
         to = Array.isArray(to) ? to: [to]
         creator = creator ?? from
@@ -163,14 +183,17 @@ class ChatBase {
         let task = await this.repositories.task.save({
             from,
             to,
-            event,
+            eventType,
             creator,
             createAt: new Date(),
             content: content ?? '',
         }) as Task
 
         // FIXME: return taskID
-        const taskID = task[EntityId]!
+        const taskID = task[EntityId] as TaskID
+
+        // 根據 task 的 event 執行指定任務
+        const eventResult = this.events[task.eventType]?.action?.(task)
 
         to.forEach(async e => {
             let toUser = await this.repositories.user.fetch(e) as User
@@ -182,13 +205,17 @@ class ChatBase {
         fromUser.tracking.push(taskID)
         fromUser = await this.repositories.user.save(fromUser) as User
 
-        return this.returnMsg(true, '任務建立')
+        // return this.returnMsg(true, '任務建立')
+        return eventResult
     }
-    async completedTask(taskID: TaskID) {
+    async completedTask(taskID: TaskID): Promise<any> {
         let task = await this.repositories.task.fetch(taskID) as Task
 
+        // 根據 task 的 event 執行指定任務
+        const eventResult = this.events[task.eventType]?.finishAction?.(task)
+
+        // 刪除 user from 的跟蹤
         let fromUser = await this.repositories.user.fetch(task.from) as User
-        
         const index = fromUser.tracking.indexOf(taskID)
         if (index >= 0) {
             fromUser.tracking.splice(index, 1)
@@ -196,7 +223,8 @@ class ChatBase {
         }
         // FIXME: 如果沒有對應的taskID
         
-        let toUsers = await this.repositories.user.fetch(task.to) as Required<User>[]
+        // 刪除 user to 的任務
+        let toUsers = await this.repositories.user.fetch(task.to) as User[]
         toUsers.forEach(async to => {
             const index = to.tasks.indexOf(taskID)
             if (index >= 0) {
@@ -205,9 +233,11 @@ class ChatBase {
             }
             // TODO: 如果沒有對應的taskID
         })
+        // 刪除任務
         await this.repositories.task.remove(taskID)
         
-        return this.returnMsg(true, '任務完成')
+        // return this.returnMsg(true, '任務完成')
+        return eventResult
     }
 
     async FriendInvitation(from: UserID, to: UserID) {
@@ -215,7 +245,7 @@ class ChatBase {
         await this.task({
             from, 
             to: to, 
-            event: ChatEvents.FriendInvitation
+            eventType: ChatEvents.FriendInvitation
         })
         // TODO: 通知
         // await this.notify({ from, to, event: ChatEvents.FriendInvitation, msg: `來自 ${from} 的好友邀請` })
@@ -223,24 +253,29 @@ class ChatBase {
         return this.returnMsg(true, '已送出好友邀請')
     }
     
-    async FriendConfirmation(from: UserID, to: UserID) {
+    async FriendConfirmation(taskID: TaskID, /* from: UserID, to: UserID */) {
 
-        await this.task({
-            from, 
-            to    : to, 
-            event : ChatEvents.FriendConfirmation
-        })
+        // await this.task({
+        //     from, 
+        //     to    : to, 
+        //     eventType : ChatEvents.FriendConfirmation
+        // })
+        
+        // await this.completedTask(taskID)
 
-        // TODO: 還沒檢視完成
+        let task = await this.repositories.task.fetch(taskID) as Task
+        const from = task.from
+        const to   = task.to[0]
+
         const groupID = await this.createDirectGroup(from, to)
 
-        // const multi = this.db.multi()
-        // multi.hSet(this.user(from).friends, to, JSON.stringify({ status: 6, groupID }))
-        // multi.hSet(this.user(to).friends, from, JSON.stringify({ status: 7, groupID }))
-        // const added = await multi.exec()
-        // if (added.some(e => e as number <= 0)) return this.returnMsg(false, '資料庫出現問題')
+        let fromUser = await this.repositories.user.fetch(from) as User
+        fromUser.friends.push(groupID)
+        await this.repositories.user.save(fromUser) as User
 
-        // await this.completedTask(taskID)
+        let toUser = await this.repositories.user.fetch(to) as User
+        toUser.friends.push(groupID)
+        await this.repositories.user.save(toUser) as User
 
         return this.returnMsg(true, '已添加為好友') 
     }
@@ -263,10 +298,10 @@ class ChatBase {
         if (!invitedMembers.length) return
 
         await this.task({
-            creator : inviter,
-            from    : groupID,
-            to      : invitedMembers, 
-            event   : ChatEvents.GroupInvitation,
+            creator   : inviter,
+            from      : groupID,
+            to        : invitedMembers, 
+            eventType : ChatEvents.GroupInvitation,
         })
         // TODO: 通知
         // await this.notify({ from: groupID, to: invitedMembers, event, msg: `${from} 邀請您加入[${groupID}]群組` })
@@ -300,10 +335,10 @@ class ChatBase {
     async groupConfirmation(userID: UserID, groupID: GroupID) {
 
         await this.task({
-            creator : userID,
-            from    : userID,
-            to      : groupID, 
-            event   : ChatEvents.GroupConfirmation,
+            creator   : userID,
+            from      : userID,
+            to        : groupID, 
+            eventType : ChatEvents.GroupConfirmation,
         })
 
         let user = await this.repositories.user.fetch(userID) as User
@@ -332,24 +367,28 @@ class ChatBase {
         const messageID = message[EntityId] as MessageID
 
         // FIXME: 兩個方法
-        // 1: 直接寫到 group 的 messages 中
-        let group = await this.repositories.group.fetch(to) as Group
-        group.messages.push(messageID)
-        group = await this.repositories.group.save(group) as Group
+        const method = 1
+        if (method === 1) {
+            // 1: 直接寫到 group 的 messages 中
+            let group = await this.repositories.group.fetch(to) as Group
+            group.messages.push(messageID)
+            group = await this.repositories.group.save(group) as Group
 
-        // TODO: 通知
+            // TODO: 通知
 
-        // 2: 寫成 task，等第一個用戶在線再寫到 group 的 messages 中
-        await this.task({
-            from,
-            to,
-            creator: from,
-            event: ChatEvents.SendMessage,
-            content
-        })
-        // TODO: 通知
-        // await this.notify({ from, to, event: ChatEvents.msg, msg: msg })
-        
+        } else if (method === 2) {
+            // 2: 寫成 task，等第一個用戶在線再寫到 group 的 messages 中
+            await this.task({
+                from,
+                to,
+                creator   : from,
+                eventType : ChatEvents.SendMessage,
+                content
+            })
+            
+            // TODO: 通知
+            // await this.notify({ from, to, event: ChatEvents.msg, msg: msg })
+        }
         return messageID
     }
     async readMsg(reader: UserID, messageID: MessageID) {

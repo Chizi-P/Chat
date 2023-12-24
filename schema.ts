@@ -49,18 +49,18 @@ const schemasArgs = {
         readers  : { type: 'string[]' }  // userID[]
     },
     notification: {
-        from     : { type: 'string' },   // userID
-        to       : { type: 'string[]' }, // userID
-        event    : { type: 'string' },   // 暫時不用
-        content  : { type: 'string' },   // 附帶要顯示的信息
-        openURL  : { type: 'string' },   // url
-        createAt : { type: 'date' },     // userID | system
+        from      : { type: 'string' },   // userID
+        to        : { type: 'string[]' }, // userID
+        eventType : { type: 'string' },   // 暫時不用
+        content   : { type: 'string' },   // 附帶要顯示的信息
+        openURL   : { type: 'string' },   // url
+        createAt  : { type: 'date' },     // userID | system
     },
     task: {
         // memberType : { type: 'string' },   // 
         from       : { type: 'string' },   // userID | groupID
         to         : { type: 'string[]' }, // userID
-        event      : { type: 'string' },   // 
+        eventType  : { type: 'string' },   // 
         creator    : { type: 'string' },   // userID
         createAt   : { type: 'date' },     // timestamp
         content    : { type: 'string' },   // string | JSON
