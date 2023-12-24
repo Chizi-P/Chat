@@ -50,7 +50,7 @@ const schemasArgs = {
     },
     notification: {
         from      : { type: 'string' },   // userID
-        to        : { type: 'string[]' }, // userID
+        to        : { type: 'string' },   // userID
         eventType : { type: 'string' },   // 暫時不用
         content   : { type: 'string' },   // 附帶要顯示的信息
         openURL   : { type: 'string' },   // url
@@ -59,7 +59,7 @@ const schemasArgs = {
     task: {
         // memberType : { type: 'string' },   // 
         from       : { type: 'string' },   // userID | groupID
-        to         : { type: 'string[]' }, // userID
+        to         : { type: 'string' }, // userID
         eventType  : { type: 'string' },   // 
         creator    : { type: 'string' },   // userID
         createAt   : { type: 'date' },     // timestamp
