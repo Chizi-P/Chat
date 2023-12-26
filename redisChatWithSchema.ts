@@ -2,6 +2,7 @@ import { createClient, RedisClientType, RedisClientOptions } from 'redis'
 import bcrypt from 'bcrypt'
 import { EntityId } from 'redis-om'
 import { createRepositories, RepositoriesType, RepositoriesDataType } from './schema'
+import jwt from 'jsonwebtoken'
 
 // 單例
 function Singleton<T>(Class: new (...args: any[]) => T): (...args: any[]) => T {
@@ -19,6 +20,7 @@ type Group          = RepositoriesDataType['group']
 type Message        = RepositoriesDataType['message']
 type Notification   = RepositoriesDataType['notification'] & { eventType: ChatEvents }
 type Task           = RepositoriesDataType['task'] & { eventType: ChatEvents }
+type ValueOf<T>     = T[keyof T]
 
 enum ChatEvents {
     SendMessage            = 'sendMessage',         // 發送訊息
@@ -28,32 +30,41 @@ enum ChatEvents {
     // GroupConfirmation      = 'groupConfirmation',   // 確認加入群組
 }
 
-type ChatRegisterEvent = Record<string, {
+type ChatRegisterEvent = Record<ChatEvents | string, {
     action? : (this: ChatBase, task: Task) => Promise<any>,
     finish? : (this: ChatBase, task: Task) => Promise<any>,
 }>
 
 enum ChatError {
-    EmailAlreadyExists = 'EmailAlreadyExists', // 電子郵件已存在
-    InvalidEmail       = 'InvalidEmail',       // 無效的電子郵件
-    InvalidUsername    = 'InvalidUsername',    // 無效的用戶名
-    WeakPassword       = 'WeakPassword',       // 弱密碼
-    InvalidPassword    = 'InvalidPassword',    // 無效的密碼
-    ServerError        = 'ServerError',        // 伺服器內部錯誤
-    CaptchaError       = 'CaptchaError',       // 驗證碼錯誤
-    TermsNotAccepted   = 'TermsNotAccepted',   // 用戶未接受條款
-    UserNotFound       = 'UserNotFound'        // 用戶不存在
+    EmailAlreadyExists     = 'EmailAlreadyExists',     // 電子郵件已存在
+    InvalidEmail           = 'InvalidEmail',           // 無效的電子郵件
+    InvalidUsername        = 'InvalidUsername',        // 無效的用戶名
+    WeakPassword           = 'WeakPassword',           // 弱密碼
+    InvalidPassword        = 'InvalidPassword',        // 無效的密碼
+    ServerError            = 'ServerError',            // 伺服器內部錯誤
+    CaptchaError           = 'CaptchaError',           // 驗證碼錯誤
+    TermsNotAccepted       = 'TermsNotAccepted',       // 用戶未接受條款
+    UserNotFound           = 'UserNotFound',           // 用戶不存在
+    AccountOrPasswordError = 'AccountOrPasswordError', // 帳號或電子郵件錯誤
+}
+
+type ResultWithChatError<T extends object = {}> = Partial<T> & { err: ChatError | string } | Required<T> & { err?: ChatError | string }
+
+type Options = {
+    privateKey: jwt.Secret
 }
 
 class ChatBase {
     
-    private db         : RedisClientType
-    private options?   : RedisClientOptions
-    private repos      : RepositoriesType
-    public  isSaveLog  : boolean = true
-    public  isShowLog  : boolean = true
-    public  isLogTable : boolean = true
-    constructor(options? : RedisClientOptions) {
+    private db             : RedisClientType
+    private redisOptions?  : RedisClientOptions // FIXME: use options
+    private repos          : RepositoriesType
+    private options        : Options
+    public  isSavingLog    : boolean = true
+    public  isShowingLog   : boolean = true
+    public  isLogWithTable : boolean = true
+    constructor(options: Options, redisOptions?: RedisClientOptions) {
+        this.redisOptions = redisOptions
         this.options = options
         this.db = createClient()
         this.db.on('error',  err => this.logger('Redis Client Error', err))
@@ -107,15 +118,15 @@ class ChatBase {
             }
         }
     }
-    registerEvent(name: keyof ChatRegisterEvent | ChatEvents, eventData: ChatRegisterEvent[keyof ChatRegisterEvent]) {
+    registerEvent(name: keyof ChatRegisterEvent, eventData: ValueOf<ChatRegisterEvent>) {
         this.events[name] = eventData
     }
     private async logger(...log: (string | object)[]): Promise<void> {
-        if (this.isShowLog) {
-            if (typeof log === 'object' && this.isLogTable) console.table(...log)
-            else                                            console.log(...log)
+        if (this.isShowingLog) {
+            if (typeof log === 'object' && this.isLogWithTable) console.table(...log)
+            else                                                console.log(...log)
         }
-        if (this.isSaveLog) {
+        if (this.isSavingLog) {
             await this.db.lPush('logs', JSON.stringify({ log: log.join(' '), createAt: Date.now() }))
         }
     }
@@ -151,6 +162,23 @@ class ChatBase {
         }) as User
         return user[EntityId] as UserID
     }
+    // async login(token: string): Promise<string | ChatError>
+    async login(email: string, password: string): Promise<ResultWithChatError<{token: string}>> {
+        const hashedPassword = await this.hash(password)
+        let user = await this.repos.user.search()
+            .where('email').eq(email)
+            .and('hashedPassword').eq(hashedPassword)
+            .return.first() as User
+        if (user === null) return { err: ChatError.AccountOrPasswordError }
+
+        const token = jwt.sign({
+            userID   : user[EntityId], 
+            name     : user.name, 
+            email    : user.email, 
+            createAt : Date.now(),
+        }, this.options.privateKey)
+        return { token }
+    }
 
     // 通知
     async notify(from: UserID, to: UserID, content: string, eventType: ChatEvents): Promise<NotificationID> {
@@ -168,15 +196,15 @@ class ChatBase {
         return notificationID
     }
 
-    async task(taskData: { from: UserID, to: UserID, eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ChatRegisterEvent[keyof ChatRegisterEvent]['action']>>>[]>
-    async task(taskData: { from: UserID, to: UserID[], eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ChatRegisterEvent[keyof ChatRegisterEvent]['action']>>>[]>
-    async task(taskData: { from: UserID, to: UserID | UserID[], eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ChatRegisterEvent[keyof ChatRegisterEvent]['action']>>>[]> {
+    async task(taskData: { from: UserID, to: UserID,            eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
+    async task(taskData: { from: UserID, to: UserID[],          eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
+    async task(taskData: { from: UserID, to: UserID | UserID[], eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]> {
         const { from, eventType, content } = taskData
         let { to, creator } = taskData
         to = Array.isArray(to) ? to: [to]
         creator = creator ?? from
         let taskIDs: TaskID[] = []
-        let eventResults: Awaited<ReturnType<NonNullable<ChatRegisterEvent[keyof ChatRegisterEvent]['action']>>>[] = []
+        let eventResults: Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[] = []
         to.forEach(async toUser => {
             let task = await this.repos.task.save({
                 from,
@@ -198,7 +226,7 @@ class ChatBase {
 
         return eventResults
     }
-    async finishTask(taskID: TaskID): Promise<Awaited<ReturnType<NonNullable<ChatRegisterEvent[keyof ChatRegisterEvent]['finish'] | undefined>>>> {
+    async finishTask(taskID: TaskID): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['finish'] | undefined>>>> {
         let task = await this.repos.task.fetch(taskID) as Task
         // 根據 task 的 event 執行指定任務
         const eventResult = this.events[task.eventType]?.finish?.call(this, task)
@@ -325,4 +353,12 @@ class ChatBase {
 // 生成單例
 const Chat = Singleton(ChatBase)
 
-export default Chat
+export type {
+    ChatRegisterEvent,
+}
+
+export {
+    Chat,
+    ChatError,
+    ChatEvents,
+}

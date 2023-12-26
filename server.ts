@@ -2,7 +2,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { parse } from 'cookie';
-import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
@@ -22,63 +22,66 @@ app.get('/', (req, res) => {
     res.send('api')
 })
 
-function ok (msg) { return { ok: true , msg } }
-function not(msg) { return { ok: false, msg } }
+const ok  = (msg: string): { ok: boolean, msg: string } => ({ ok: true, msg })
+const not = (msg: string): { ok: boolean, msg: string } => ({ ok: false, msg })
 
-async function hash(data) {
-    const saltRounds = 10
-    const salt = await bcrypt.genSalt(saltRounds)
-    const hashed = await bcrypt.hash(data, salt)
-    return hashed
-}
+// async function hash(data) {
+//     const saltRounds = 10
+//     const salt = await bcrypt.genSalt(saltRounds)
+//     const hashed = await bcrypt.hash(data, salt)
+//     return hashed
+// }
 
-async function user(email, field) {
-    return await db.hGet(`users:${email}`, field)
-}
-
+// async function user(email, field) {
+//     return await db.hGet(`users:${email}`, field)
+// }
 
 // ------------------------------- //
-import Chat from './redisChat';
-const chat = new Chat()
+import { Chat, ChatError } from './redisChatWithSchema'
+const chat = await Chat().connect()
 
 app.post('/register', async (req, res) => {
     const { name, email, password } = req.body
-
     // 輸入不能為空
     if (!(name && email && password)) return res.send(not('輸入不能為空'))
-    if (await db.exists(`users:${email}`)) return res.send(not('email 已被使用'))
 
-    const hashedPassword = await hash(password)
-
-    const added = await db.hSet(`users:${email}`, {
-        name, email, hashedPassword
-    })
+    const userID = await chat.createUser(name, email, password)
 
     return res.send(ok('註冊成功'))
 })
 
 io.use(async (socket, next) => {
     
-    const cookies = parse(socket.request.headers.cookie || "");
-    const token = socket.handshake.auth.token || cookies.token
+    const cookies = parse(socket.request.headers.cookie || "")
+    let token = socket.handshake.auth.token || cookies.token
+
+    // login with token
+    // FIXME - 考慮要不要放到 Chat class 裡面
     if (token) {
+        jwt.verify(token, '###', function (err, decoded) {
+            if (err) return console.error(err)
+            socket.decoded = decoded
+        })
         // 驗證 token ...
         return next()
     }
 
+    // login with email and password
     const { email, password } = socket.handshake.auth
-
-    const hashedPassword = await user(email, 'hashedPassword')
     
-    if (!bcrypt.compareSync(password, hashedPassword)) return next(new Error('密碼錯誤'))
-    // - 密碼正確
+    const res = await chat.login(email, password)
+    if (!res.err) {
+        token = res.token
+    }
 
-    // 防止多端登錄
-    // 先強制登出其他位置帳號
-    const oldSocketID = user(email, 'socketID')
-    if (oldSocketID) io.sockets.sockets[oldSocketID].disconnect(true)
+    // TODO - 防止多端登錄
+    // TODO - 先強制登出其他位置帳號
+    // const oldSocketID = user(email, 'socketID')
+    // if (oldSocketID) io.sockets.sockets[oldSocketID].disconnect(true)
 
     // 成功登錄
+    jwt.decode()
+
     socket.user.name  = await user(email, 'name')
     socket.user.email = email
     socket.user.id    = email
