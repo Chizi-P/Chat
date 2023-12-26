@@ -45,10 +45,18 @@ enum ChatError {
     CaptchaError           = 'CaptchaError',           // 驗證碼錯誤
     TermsNotAccepted       = 'TermsNotAccepted',       // 用戶未接受條款
     UserNotFound           = 'UserNotFound',           // 用戶不存在
-    AccountOrPasswordError = 'AccountOrPasswordError', // 帳號或電子郵件錯誤
+    AccountOrPasswordError = 'AccountOrPasswordError', // 帳號或密碼錯誤
 }
 
-type ResultWithChatError<T extends object = {}> = Partial<T> & { err: ChatError | string } | Required<T> & { err?: ChatError | string }
+type ResultWithChatError<T extends object = {}> =
+    | ({ err?: null } & T)
+    | ({ err: ChatError | string } & Partial<T>)
+
+// type ResultWithChatError<T extends object = {}> =
+//     | ({ err: ChatError | string } & { [K in keyof T]?: undefined })
+//     | ({ err?: null } & T)
+
+// type ResultWithChatError<T extends object = {}> = { err?: ChatError | string } & T
 
 type Options = {
     privateKey: jwt.Secret

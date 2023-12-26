@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import type { Socket } from 'socket.io'
 import { parse } from 'cookie';
 import jwt from 'jsonwebtoken';
 const app = express();
@@ -40,6 +41,11 @@ const not = (msg: string): { ok: boolean, msg: string } => ({ ok: false, msg })
 import { Chat, ChatError } from './redisChatWithSchema'
 const chat = await Chat().connect()
 
+interface ExtendedSocket extends Socket {
+    token?: string
+    decoded?: string | jwt.JwtPayload
+}
+
 app.post('/register', async (req, res) => {
     const { name, email, password } = req.body
     // 輸入不能為空
@@ -50,29 +56,29 @@ app.post('/register', async (req, res) => {
     return res.send(ok('註冊成功'))
 })
 
-io.use(async (socket, next) => {
+io.use(async (socket: ExtendedSocket, next) => {
     
     const cookies = parse(socket.request.headers.cookie || "")
-    let token = socket.handshake.auth.token || cookies.token
-
-    // login with token
+    let token: string = socket.handshake.auth.token || cookies.token
+    
+    // login with token //
     // FIXME - 考慮要不要放到 Chat class 裡面
     if (token) {
-        jwt.verify(token, '###', function (err, decoded) {
-            if (err) return console.error(err)
-            socket.decoded = decoded
-        })
-        // 驗證 token ...
+        // TODO - catch error
+        const decoded = jwt.verify(token, '###')
+        socket.decoded = decoded
         return next()
     }
 
-    // login with email and password
+    // login with email and password //
     const { email, password } = socket.handshake.auth
     
     const res = await chat.login(email, password)
-    if (!res.err) {
-        token = res.token
+    if (res.err !== null) {
+        // FIXME - error 的類型
+        return next(new Error('帳號或密碼錯誤'))
     }
+    token = res.token
 
     // TODO - 防止多端登錄
     // TODO - 先強制登出其他位置帳號
