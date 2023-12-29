@@ -20,16 +20,17 @@ const schemasArgs = {
     user: {
         name           : { type: 'string' },
         email          : { type: 'string'},    // unique email
-        hashedPassword : { type: 'string' },   // hasded password
+        hashedPassword : { type: 'string' },   // hashed password
         avatar         : { type: 'string' },   // image src url
         createAt       : { type: 'date' },     // timestamp
         friends        : { type: 'string[]' }, // userID[]
         groups         : { type: 'string[]' }, // groupID[]
-        notifications  : { type: 'string[]' }, // notifID[]
+        notifications  : { type: 'string[]' }, // notifyID[]
         tasks          : { type: 'string[]' }, // taskID[]
         tracking       : { type: 'string[]' }, // taskID[] 可以用搜尋的方法取代他
         isOnline       : { type: 'boolean' },  // 是否在線
         lastOnlineTime : { type: 'date' },     // date
+        serverUserID   : { type: 'string' },   // server 給 user 的 ID 比如 socket.io 的 socket.id
     },
     group: {
         name      : { type: 'string' },
@@ -107,7 +108,7 @@ function createRepositories(redisClient: RedisClientType): RepositoriesType {
     ) as RepositoriesType
 }
 
-export type { 
+export type {
     SchemasType,
     RepositoriesType,
     RepositoriesDataType

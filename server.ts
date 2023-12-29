@@ -1,173 +1,225 @@
-import express from 'express';
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import type { Socket } from 'socket.io'
-import { parse } from 'cookie';
-import jwt from 'jsonwebtoken';
-const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer);
+import express from 'express'
+import { createServer } from 'http'
+import { Server } from 'socket.io'
+import { parse } from 'cookie'
+import jwt from 'jsonwebtoken'
+import { Chat, ChatError, User } from './redisChatWithSchema.js'
+import * as cfg from './.config.js'
+import {
+    ServerToClientEvents,
+    ClientToServerEvents,
+    InterServerEvents,
+    SocketData
+} from './socketioTyping.js'
 
-import { createClient } from 'redis';
+const chat = Chat({
+    privateKey: cfg.privateKey
+})
+chat.logger('已連接 DB')
 
-const db = createClient()
-db.on('error', err => console.log('Redis Client Error', err))
-db.on('connect', () => console.log('Redis client connected'))
-db.on('end', () => console.log('Redis client disconnected'))
-await db.connect()
+const app = express()
+const httpServer = createServer(app)
+const io = new Server<
+    ClientToServerEvents,
+    ServerToClientEvents,
+    InterServerEvents,
+    SocketData
+>(httpServer)
+
 
 app.use(express.urlencoded({extended: false}))
 app.use(express.json())
+
+app.use((req, res, next) => {
+
+})
 
 app.get('/', (req, res) => {
     res.send('api')
 })
 
+app.post('/friends', (req, res) => {
+    res.send('meow')
+})
+
+app.post('/user', (req, res) => {
+    req.body
+})
+
 const ok  = (msg: string): { ok: boolean, msg: string } => ({ ok: true, msg })
 const not = (msg: string): { ok: boolean, msg: string } => ({ ok: false, msg })
 
-// async function hash(data) {
-//     const saltRounds = 10
-//     const salt = await bcrypt.genSalt(saltRounds)
-//     const hashed = await bcrypt.hash(data, salt)
-//     return hashed
-// }
-
-// async function user(email, field) {
-//     return await db.hGet(`users:${email}`, field)
-// }
-
 // ------------------------------- //
-import { Chat, ChatError } from './redisChatWithSchema'
-const chat = await Chat().connect()
-
-interface ExtendedSocket extends Socket {
-    token?: string
-    decoded?: string | jwt.JwtPayload
-}
 
 app.post('/register', async (req, res) => {
     const { name, email, password } = req.body
+    console.table(req.body)
     // 輸入不能為空
     if (!(name && email && password)) return res.send(not('輸入不能為空'))
-
     const userID = await chat.createUser(name, email, password)
+    if (userID in ChatError) {
+        return res.send(not(userID))
+    }
+    chat.logger('userID:', userID)
 
     return res.send(ok('註冊成功'))
 })
 
-io.use(async (socket: ExtendedSocket, next) => {
-    
-    const cookies = parse(socket.request.headers.cookie || "")
-    let token: string = socket.handshake.auth.token || cookies.token
-    
-    // login with token //
-    // FIXME - 考慮要不要放到 Chat class 裡面
-    if (token) {
-        // TODO - catch error
-        const decoded = jwt.verify(token, '###')
-        socket.decoded = decoded
-        return next()
+// OPT
+declare module 'jsonwebtoken' {
+    export interface UserJwtPayload extends jwt.JwtPayload {
+        userID   : string, 
+        name     : string, 
+        email    : string, 
+        createAt : number,
     }
+}
 
-    // login with email and password //
-    const { email, password } = socket.handshake.auth
+// TODO - logger
+
+io.use(async (socket, next) => {
+    const cookies = parse(socket.request.headers.cookie || "")
+    // chat.logger('cookies:', cookies)
+
+    let token: string = socket.handshake.headers.token as string || cookies.token
+    const { email, password } = socket.handshake.headers as { email?: string, password?: string }
+    // console.table(socket.handshake.headers)
+
+    // OPT 
+    let payload: jwt.UserJwtPayload | Awaited<ReturnType<typeof chat.login>>
+    // login with token //
+    if (token !== undefined) {
+        payload = await chat.login(token)
+        if (payload.err !== undefined) return next(new Error('token 驗證失敗'))
     
-    const res = await chat.login(email, password)
-    if (res.err !== null) {
-        // FIXME - error 的類型
-        return next(new Error('帳號或密碼錯誤'))
+    // login with email and password //
+    } else if (email !== undefined && password !== undefined) {
+        payload = await chat.login(email, password)
+        if (payload.err !== undefined) return next(new Error('帳號或密碼錯誤')) // FIXME - error 的類型
+        
+    } else {
+        socket.disconnect(true)
+        chat.logger('用戶沒有提供 token 或 email 和 password')
+        return next(new Error('用戶沒有提供 token 或 email 和 password'))
     }
-    token = res.token
 
     // TODO - 防止多端登錄
+    
+    // ...
     // TODO - 先強制登出其他位置帳號
+    // ...
     // const oldSocketID = user(email, 'socketID')
     // if (oldSocketID) io.sockets.sockets[oldSocketID].disconnect(true)
 
     // 成功登錄
-    jwt.decode()
+    // TODO - 回傳 token 給 client
+    // ... user.token
 
-    socket.user.name  = await user(email, 'name')
-    socket.user.email = email
-    socket.user.id    = email
-    // 儲存對應的 socket id
-    const added = await db.hSet(`users:${email}`, 'socketID', socket.id)
-    console.log('登錄成功:', email)
+    socket.data.userID = payload.userID
+    socket.data.name   = payload.name
+    socket.data.email  = payload.email
+
+    // OPT - 儲存對應的 socket id
+    let user = await chat.repos.user.fetch(payload.userID)
+    user.serverUserID = socket.id
+    user = await chat.repos.user.save(user)
+
+    chat.logger('[登錄]', socket.data.userID)
     return next()
-});
+})
 
 io.on('connection', async socket => {
-    console.log(socket.user.name, '已登錄');
+    chat.logger('[已連接]', socket.data.userID)
 
     // 讀取離線消息
-    while (true) {
-        const msg = await db.rPop(`${socket.user.id}OfflineMessageQueue`)
-        if (msg !== null) socket.emit('msg', { ok: true, msg })
-        else break
+    // while (true) {
+    //     const msg = await db.rPop(`${socket.data.userID}OfflineMessageQueue`)
+    //     if (msg !== null) socket.emit('msg', { ok: true, msg })
+    //     else break
+    // }
+    let notifications = await chat.checkForOfflineMessages(socket.data.userID)
+    if (notifications.length > 0) {
+        socket.emit('notifications', notifications)
     }
     
+    let user = await chat.repos.user.fetch(socket.data.userID) as User
+    await socket.join(user.groups)
+
     // 轉發訊息
-    socket.on('msg', async (data, callback) => {
-        const { to, msg } = data;
-        const from = socket.user.id
+    socket.on('message', async (toGroupID, content, callback) => {
+        const from = socket.data.userID
+
+        chat.logger('[傳訊息]', from, ':', content, '=>', toGroupID)
+
+        io.to(toGroupID).emit('message', from, content)
+        await chat.sendMessage(from, toGroupID, content)
+
+        // OPT to user 有 socketID 的話代表在線
         
-        const toSocketID = await user(to, 'socketID')
-        
-        if (toSocketID) io.to(toSocketID).emit('msg', { from: socket.user.id, msg })
+        // 在線
+        if (true) {
+            callback(ok('已傳送'))
+        }
+        // 不在線
         else {
-            callback( {ok: false, msg: '用戶不在線'} )
+            callback({ ok: false, message: '用戶不在線' })
             // 發到離線消息隊列
-            await db.lPush(`${to}OfflineMessageQueue`, JSON.stringify({ from, msg, msgID: 'TODO - set a uuid' }))
         }
     })
 
-    socket.on('joinRoom', (data, callback) => {
-        const { room } = data
-        socket.join(room)
-        io.to(room).emit('msg', { text: `用戶 ${socket.id} 加入了房間 ${room}`, system: true })
-    })
+    socket.on('friendInvitation', async (to, callback) => {
 
-    socket.on('addFriend', async data => {
-        const { to } = data
-        const from = socket.user.id
+        // TODO - 判斷 to user 是否存在
 
-        if (!await db.exists(`users:${to}`)) socket.emit('msg', { ok: false, msg: '用戶不存在' })
+        const from = socket.data.userID
 
-        // 根據 states
-        const states = ['不是好友', '成為好友', '需要確認', '等待確認', '拒絕', '被拒絕', '確認', '被確認']
+        let user = await chat.repos.user.fetch(to)
+        const toSocketID = user.serverUserID as string
+
+        // if (!await db.exists(`users:${to}`)) socket.emit('msg', { ok: false, msg: '用戶不存在' })
+
+        // // 根據 states
+        // const states = ['不是好友', '成為好友', '需要確認', '等待確認', '拒絕', '被拒絕', '確認', '被確認']
 
         // 將好友關係存儲在伺服器中
-        await db.hSet(`users:${from}:friends`, to, 2)
-        await db.hSet(`users:${to}:friends`, to, 3)
+        // await db.hSet(`users:${from}:friends`, to, 2)
+        // await db.hSet(`users:${to}:friends`, to, 3)
         
-
         // 通知發送請求的用戶，好友已經被成功添加
-        socket.emit('msg', { ok: true, msg: `已請求添加 ${to} 為好友`, system: true })
+        // socket.emit('msg', { ok: true, msg: `已請求添加 ${to} 為好友`, system: true })
+
+        await chat.FriendInvitation(from, to)
+
+        // io.to(to).emit('friendInvitation', from)
+        socket.to(toSocketID).emit('friendInvitation', from)
 
         // 如果對方也在線上，通知對方有人想添加他為好友
-        io.to(await user(to, 'socketID')).emit('friendRequest', { ok: true, msg: `${from} 把您設為好友`, system: true });
-    });
+        // io.to(await user(to, 'socketID')).emit('friendRequest', { ok: true, msg: `${from} 把您設為好友`, system: true })
 
-    socket.on('confirmFriend', async data => {
-        const { to } = data
-        const from = socket.user.id
+        callback(ok('已發送好友邀請'))
+    })
 
-        await db.hSet(`users:${from}:friends`, to, 6)
-        await db.hSet(`users:${to}:friends`, to, 7)
-        
-        socket.emit('msg', { ok: true, msg: `已確認添加 ${to} 為好友`, system: true})
-        io.to(await user(to, 'socketID')).emit('msg', { ok: true, msg: `${from} 已確認好友關係`, system: true })
+    socket.on('groupInvitation',async (groupID, invitedMembers) => {
+        const inviter = socket.data.userID
+        await chat.groupInvitation(inviter, groupID, invitedMembers)
+    })
+
+    socket.on('confirm', async taskID => {
+        await chat.finishTask(taskID)
     })
 
     socket.on('disconnect', async () => {
         // 刪除 socketID
-        await db.hSet(`users:${socket.user.id}`, 'socketID', null)
-    });
-});
+        let user = await chat.repos.user.fetch(socket.data.userID)
+        user.isOnline = false
+        user.serverUserID = ''
+        user = await chat.repos.user.save(user)
+        chat.logger('[已離線]', socket.data.userID)
+    })
+})
 
 // 啟動伺服器監聽指定的埠號
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000
 httpServer.listen(PORT, () => {
-    console.log(`伺服器正在監聽埠號 ${PORT}`);
-});
+    chat.logger(`伺服器正在監聽埠號 ${PORT}`)
+})

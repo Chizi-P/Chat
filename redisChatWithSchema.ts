@@ -1,8 +1,9 @@
 import { createClient, RedisClientType, RedisClientOptions } from 'redis'
 import bcrypt from 'bcrypt'
-import { EntityId } from 'redis-om'
-import { createRepositories, RepositoriesType, RepositoriesDataType } from './schema'
 import jwt from 'jsonwebtoken'
+import { EntityId } from 'redis-om'
+import { createRepositories, RepositoriesType } from './schema.js'
+import type { RepositoriesDataType } from './schema.js'
 
 // 單例
 function Singleton<T>(Class: new (...args: any[]) => T): (...args: any[]) => T {
@@ -21,6 +22,9 @@ type Message        = RepositoriesDataType['message']
 type Notification   = RepositoriesDataType['notification'] & { eventType: ChatEvents }
 type Task           = RepositoriesDataType['task'] & { eventType: ChatEvents }
 type ValueOf<T>     = T[keyof T]
+type DataWithSet<T> = T & {
+    set: (key: keyof T, value: T[keyof T]) => Promise<T>
+}
 
 enum ChatEvents {
     SendMessage            = 'sendMessage',         // 發送訊息
@@ -46,31 +50,27 @@ enum ChatError {
     TermsNotAccepted       = 'TermsNotAccepted',       // 用戶未接受條款
     UserNotFound           = 'UserNotFound',           // 用戶不存在
     AccountOrPasswordError = 'AccountOrPasswordError', // 帳號或密碼錯誤
+    TokenValidationError   = 'TokenValidationError',   // token 驗證失敗
 }
 
 type ResultWithChatError<T extends object = {}> =
-    | ({ err?: null } & T)
+    | ({ err?: undefined } & T)
     | ({ err: ChatError | string } & Partial<T>)
-
-// type ResultWithChatError<T extends object = {}> =
-//     | ({ err: ChatError | string } & { [K in keyof T]?: undefined })
-//     | ({ err?: null } & T)
-
-// type ResultWithChatError<T extends object = {}> = { err?: ChatError | string } & T
 
 type Options = {
     privateKey: jwt.Secret
 }
 
 class ChatBase {
-    
+
     private db             : RedisClientType
     private redisOptions?  : RedisClientOptions // FIXME: use options
-    private repos          : RepositoriesType
+    public  repos          : RepositoriesType
     private options        : Options
     public  isSavingLog    : boolean = true
     public  isShowingLog   : boolean = true
     public  isLogWithTable : boolean = true
+
     constructor(options: Options, redisOptions?: RedisClientOptions) {
         this.redisOptions = redisOptions
         this.options = options
@@ -80,11 +80,33 @@ class ChatBase {
         this.db.on('end',     () => this.logger('Redis client disconnected'))
 
         this.repos = createRepositories(this.db)
+        this.connect().then(() => {
+            Object.entries(this.repos).forEach(([key, val]) => {
+                val.createIndex().then(() => this.logger(`Index of ${key} created successfully`))
+            })
+        })
     }
-    private async pushed(repoKey: keyof RepositoriesType, id: string, key: keyof RepositoriesDataType[typeof repoKey], ...pushData: any[]) {
+
+    private async push(
+        repoKey: keyof RepositoriesType, 
+        id: string, 
+        key: keyof RepositoriesDataType[typeof repoKey], 
+        ...pushData: any[]
+    ) {
         let obj = await this.repos[repoKey].fetch(id) as RepositoriesDataType[typeof repoKey]
-        (obj[key] as typeof pushData[]).push(...pushData)
+        (obj[key] as typeof pushData).push(...pushData)
         return await this.repos[repoKey].save(obj)
+    }
+
+    private async remove(
+        repoKey: keyof RepositoriesType, 
+        id: string, 
+        key: keyof RepositoriesDataType[typeof repoKey], 
+        ...removeData: any[]
+    ) {
+        let obj = await this.repos[repoKey].fetch(id) as RepositoriesDataType[typeof repoKey]
+        (obj[key] as typeof removeData) = (obj[key] as typeof removeData).filter(e => !(e in removeData))
+        return await this.repos[repoKey].save(obj) as RepositoriesDataType[typeof repoKey]
     }
     
     private events : ChatRegisterEvent = {
@@ -101,8 +123,8 @@ class ChatBase {
                 this.logger('FriendInvitation task finish')
                 const { from, to, content, eventType } = task
                 const groupID = await this.createDirectGroup(from, to)
-                await this.pushed('user', from, 'friends', groupID)
-                await this.pushed('user', to, 'friends', groupID)
+                await this.push('user', from, 'friends', groupID)
+                await this.push('user', to, 'friends', groupID)
                 // 發送通知
                 await this.notify(from, to, content, eventType)
                 return groupID
@@ -119,17 +141,19 @@ class ChatBase {
             },
             finish: async task => {
                 const { from, to, content, eventType } = task
-                await this.pushed('user', to, 'groups', from)
-                await this.pushed('group', from, 'members', to)
+                await this.push('user', to, 'groups', from)
+                await this.push('group', from, 'members', to)
                 // 發送通知
                 await this.notify(from, to, content, eventType)
             }
         }
     }
+
     registerEvent(name: keyof ChatRegisterEvent, eventData: ValueOf<ChatRegisterEvent>) {
         this.events[name] = eventData
     }
-    private async logger(...log: (string | object)[]): Promise<void> {
+
+    public async logger(...log: (string | object)[]): Promise<void> {
         if (this.isShowingLog) {
             if (typeof log === 'object' && this.isLogWithTable) console.table(...log)
             else                                                console.log(...log)
@@ -138,24 +162,31 @@ class ChatBase {
             await this.db.lPush('logs', JSON.stringify({ log: log.join(' '), createAt: Date.now() }))
         }
     }
+
     private async hash(data: string | Buffer): Promise<string> {
         const saltRounds = 10
         const salt = await bcrypt.genSalt(saltRounds)
         return await bcrypt.hash(data, salt)
     }
+
     async connect() {
         await this.db.connect()
         return this
     }
+
     async disconnect() {
         await this.db.disconnect()
         return this
     }
-    async createUser(name: string, email: string, password: string, otherData?: Record<string, any>): Promise<UserID | ChatError> {
 
+    async createUser(
+        name: string, 
+        email: string, 
+        password: string, 
+        otherData?: Record<string, any>
+    ): Promise<UserID | ChatError> {
         // 檢查 email 是否已經存在
-        if (await this.repos.user.search().where('email').eq(email).count() > 0) return ChatError.EmailAlreadyExists
-
+        if (await this.repos.user.search().where('email').eq(email).return.count() > 0) return ChatError.EmailAlreadyExists
         let user = await this.repos.user.save({
             name, 
             email, 
@@ -170,22 +201,62 @@ class ChatBase {
         }) as User
         return user[EntityId] as UserID
     }
-    // async login(token: string): Promise<string | ChatError>
-    async login(email: string, password: string): Promise<ResultWithChatError<{token: string}>> {
-        const hashedPassword = await this.hash(password)
-        let user = await this.repos.user.search()
-            .where('email').eq(email)
-            .and('hashedPassword').eq(hashedPassword)
-            .return.first() as User
-        if (user === null) return { err: ChatError.AccountOrPasswordError }
+
+    async setFactory<T extends ValueOf<RepositoriesDataType>>(obj: T) {
+        return async (key: keyof T, value: T[keyof T]): Promise<T> => {
+            obj[key] = value
+            return await this.repos.user.save(obj) as T
+        }
+    }
+
+    // FIXME - get user data
+    // OPT 使用方法和類型
+    // async getUser(userID: UserID): Promise<DataWithSet<User>> {
+    //     let user = await this.repos.user.fetch(userID) as User
+    //     return user
+    // }
+    // async user(userID: UserID): Promise<DataWithSet<User>> {
+    //     let user = await this.repos.user.fetch(userID) as User
+        
+    //     return {...user, set: await this.setFactory(user)} as DataWithSet<User>
+    // }
+    // async group(groupID: GroupID): Promise<Group> {
+    //     let group = await this.repos.user.fetch(groupID) as Group
+    //     return {...group, set: await this.setFactory(group)} as DataWithSet<Group>
+    // }
+    // TODO: other
+    // ...
+
+    async login(token: string, password?: string): Promise<ResultWithChatError<{token: string, userID: UserID, name: string, email: string}>>
+    async login(email: string, password: string): Promise<ResultWithChatError<{token: string, userID: UserID, name: string, email: string}>>
+    async login(tokenOrEmail: string, password: string): Promise<ResultWithChatError<{token: string, userID: UserID, name: string, email: string}>> {
+        // login with token
+        if (password === undefined) {
+            try {
+                let user = jwt.verify(tokenOrEmail, this.options.privateKey) as jwt.UserJwtPayload
+                return { token: tokenOrEmail, userID: user.userID, name: user.name, email: user.email }
+            } catch(e) {
+                console.log(e)
+                return { err: ChatError.TokenValidationError }
+            }
+        }
+
+        // login with email and password
+        // 搜尋對應 email 的 user
+        let user = await this.repos.user.search().where('email').eq(tokenOrEmail).return.first() as User
+        // 檢測 user 是否存在 和 密碼是否正確
+        if (user === null || !await bcrypt.compare(password, user.hashedPassword)) return { err: ChatError.AccountOrPasswordError }
+
+        const userID = user[EntityId] as UserID
 
         const token = jwt.sign({
-            userID   : user[EntityId], 
+            userID   : userID, 
             name     : user.name, 
             email    : user.email, 
             createAt : Date.now(),
         }, this.options.privateKey)
-        return { token }
+
+        return { token, userID, name: user.name, email: user.email }
     }
 
     // 通知
@@ -199,40 +270,58 @@ class ChatBase {
         }) as Notification
 
         const notificationID = notification[EntityId] as NotificationID
-        await this.pushed('user', from, 'notifications', notificationID)
+        await this.push('user', from, 'notifications', notificationID)
 
         return notificationID
     }
 
-    async task(taskData: { from: UserID, to: UserID,            eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
-    async task(taskData: { from: UserID, to: UserID[],          eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
+    // async task(taskData: { from: UserID, to: UserID,            eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
+    // async task(taskData: { from: UserID, to: UserID[],          eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
     async task(taskData: { from: UserID, to: UserID | UserID[], eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]> {
-        const { from, eventType, content } = taskData
-        let { to, creator } = taskData
-        to = Array.isArray(to) ? to: [to]
-        creator = creator ?? from
+        const { from, eventType } = taskData
+        const to = Array.isArray(taskData.to) ? taskData.to: [taskData.to]
+        const creator = taskData.creator ?? from
+        const content = taskData.content ?? ''
+
         let taskIDs: TaskID[] = []
         let eventResults: Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[] = []
         to.forEach(async toUser => {
+
+            const isExisted = await this.repos.task.search()
+                .where('from').eq(from)
+                .and('to').eq(toUser)
+                .and('eventType').eq(eventType).return.count() > 0
+                // .and('content').eq(content).returnCount() > 0;
+            if (isExisted) {
+                console.log('task is existed')
+                return
+            }
+
             let task = await this.repos.task.save({
                 from,
                 to : toUser,
                 eventType,
                 creator,
                 createAt: new Date(),
-                content: content ?? '',
+                content,
             }) as Task
 
             const taskID = task[EntityId] as TaskID
-            await this.pushed('user', toUser, 'tasks', taskID)
+            await this.push('user', toUser, 'tasks', taskID)
             // 執行 event 對應任務
             const eventResult = await this.events[eventType]?.action?.call(this, task)
             eventResults.push(eventResult)
             taskIDs.push(taskID)
         })
-        await this.pushed('user', from, 'tracking', ...taskIDs)
+        await this.push('user', from, 'tracking', ...taskIDs)
 
         return eventResults
+    }
+    async cancelTask(taskID: TaskID) {
+        let task = await this.repos.task.fetch(taskID) as Task
+        await this.remove('user', task.from, 'tracking', taskID)
+        await this.remove('user', task.to, 'tasks', taskID)
+        await this.repos.task.remove(taskID)
     }
     async finishTask(taskID: TaskID): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['finish'] | undefined>>>> {
         let task = await this.repos.task.fetch(taskID) as Task
@@ -282,7 +371,7 @@ class ChatBase {
         return groupID
     }
 
-    async groupInvitation(inviter: UserID, groupID: GroupID, invitedMembers: UserID[]) {
+    async groupInvitation(inviter: UserID, groupID: GroupID, invitedMembers: UserID | UserID[]) {
         if (!invitedMembers.length) return
         return await this.task({
             creator   : inviter,
@@ -310,7 +399,7 @@ class ChatBase {
         const groupID = group[EntityId] as GroupID
         
         // 儲存到 creator 自己的資料中
-        await this.pushed('user', creator, 'groups', groupID)
+        await this.push('user', creator, 'groups', groupID)
 
         await this.groupInvitation(creator, groupID, invitedMembers)
 
@@ -323,7 +412,7 @@ class ChatBase {
             to,
             content,
             createAt: new Date(),
-            reader: [from]
+            readers: [from]
         }) as Message
 
         const messageID = message[EntityId] as MessageID
@@ -332,7 +421,7 @@ class ChatBase {
         const method = 1
         if (method === 1) {
             // 1: 直接寫到 group 的 messages 中
-            await this.pushed('group', to, 'messages', messageID)
+            await this.push('group', to, 'messages', messageID)
             // 發送通知
             await this.notify(from, to, content, ChatEvents.SendMessage)
 
@@ -351,8 +440,14 @@ class ChatBase {
         return messageID
     }
     async readMsg(reader: UserID, messageID: MessageID) {
-        return await this.pushed('message', messageID, 'readers', reader)
+        return await this.push('message', messageID, 'readers', reader)
     }
+    // TODO - 讀取離線消息
+    async checkForOfflineMessages(userID: UserID) {
+        let user = await this.repos.user.fetch(userID) as User
+        return user.notifications
+    }
+
     async quit() {
         return await this.db.quit()
     }
@@ -363,6 +458,16 @@ const Chat = Singleton(ChatBase)
 
 export type {
     ChatRegisterEvent,
+    UserID,
+    GroupID,
+    MessageID,
+    NotificationID,
+    TaskID,
+    User,
+    Group,
+    Message,
+    Notification,
+    Task,
 }
 
 export {
