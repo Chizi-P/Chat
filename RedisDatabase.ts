@@ -1,6 +1,6 @@
 import { createClient, RedisClientType, RedisClientOptions } from 'redis'
 
-import { Singleton, Logger } from "./util.js";
+import { Singleton, Logger } from "./util.js"
 
 import type { RepositoriesDataType } from './schema.js'
 import { createRepositories, RepositoriesType } from './schema.js'
@@ -39,10 +39,10 @@ class RedisDatabase {
         repoKey : keyof RepositoriesType, 
         id      : string, 
         key     : keyof RepositoriesDataType[typeof repoKey], 
-        ...pushData: any[]
+        ...data : any[]
     ) {
         let obj = await this.repos[repoKey].fetch(id) as RepositoriesDataType[typeof repoKey]
-        (obj[key] as typeof pushData).push(...pushData)
+        (obj[key] as typeof data).push(...data)
         return await this.repos[repoKey].save(obj)
     }
 
@@ -50,13 +50,17 @@ class RedisDatabase {
         repoKey : keyof RepositoriesType, 
         id      : string, 
         key     : keyof RepositoriesDataType[typeof repoKey], 
-        ...removeData: any[]
+        ...data : any[]
     ) {
         let obj = await this.repos[repoKey].fetch(id) as RepositoriesDataType[typeof repoKey]
-        (obj[key] as typeof removeData) = (obj[key] as typeof removeData).filter(e => !(e in removeData))
+        (obj[key] as typeof data) = (obj[key] as typeof data).filter(e => !(e in data))
         return await this.repos[repoKey].save(obj) as RepositoriesDataType[typeof repoKey]
     }
 
+    public async existed(repo: keyof RepositoriesType, field: string, val: string) {
+        return await this.repos[repo].search().where(field).eq(val).return.count() > 0
+    }
+        
     public async quit() {
         return await this.db.quit()
     }
@@ -72,7 +76,6 @@ class RedisDatabase {
     }
 }
 
-// 生成單例
 export const RedisDB = Singleton(RedisDatabase)
 
 export type {

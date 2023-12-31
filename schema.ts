@@ -80,8 +80,8 @@ type ExtractType<T> =
     unknown
 
 type GeneratedTypes<T extends Record<string, SchemaDefinition>> = {
-    [Key in keyof T]: {
-        [Field in keyof T[Key]]: ExtractType<T[Key][Field]>
+    -readonly [Key in keyof T]: {
+        -readonly [Field in keyof T[Key]]: ExtractType<T[Key][Field]>
     } & Partial<Entity> // FIXME: & Partial<Entity>
 }
 

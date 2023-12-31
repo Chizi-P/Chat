@@ -3,10 +3,15 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { parse } from 'cookie'
 import jwt from 'jsonwebtoken'
+
+import publicRoutes from './router/publicRoutes.js'
+import protectedRoutes from './router/protectedRoutes.js'
+import { ok, not } from './router/func.js'
+
 import { ChatError, User } from './DatabaseType.js'
 import * as cfg from './.config.js'
 import {
-    ServerToClientEvents,
+    ServerToClientEvents,   
     ClientToServerEvents,
     InterServerEvents,
     SocketData
@@ -28,84 +33,46 @@ const io = new Server<
 app.use(express.urlencoded({extended: false}))
 app.use(express.json())
 
-app.use((req, res, next) => {
-
-})
-
-app.get('/', (req, res) => {
-    res.send('api')
-})
-
-app.post('/friends', (req, res) => {
-    res.send('meow')
-})
-
-app.post('/user', (req, res) => {
-    req.body
-})
-
-const ok  = (msg: string): { ok: boolean, msg: string } => ({ ok: true, msg })
-const not = (msg: string): { ok: boolean, msg: string } => ({ ok: false, msg })
+// 掛載路由
+app.use('/public', publicRoutes)
+app.use('/protected', protectedRoutes)
 
 // ------------------------------- //
 
-app.post('/register', async (req, res) => {
-    const { name, email, password } = req.body
-    console.table(req.body)
-    // 輸入不能為空
-    if (!(name && email && password)) return res.send(not('輸入不能為空'))
-    const userID = await ctl.createUser(name, email, password)
-    if (userID in ChatError) {
-        return res.send(not(userID))
-    }
-    ctl.log('userID:', userID)
-
-    return res.send(ok('註冊成功'))
-})
-
-// OPT
-declare module 'jsonwebtoken' {
-    export interface UserJwtPayload extends jwt.JwtPayload {
-        userID   : string, 
-        name     : string, 
-        email    : string, 
-        createAt : number,
-    }
-}
-
 io.use(async (socket, next) => {
     const cookies = parse(socket.request.headers.cookie || "")
-    // chat.logger('cookies:', cookies)
 
     let token: string = socket.handshake.headers.token as string || cookies.token
     const { email, password } = socket.handshake.headers as { email?: string, password?: string }
-    // console.table(socket.handshake.headers)
 
-    // OPT 
+    // OPT 類型錯誤
     let payload: jwt.UserJwtPayload | Awaited<ReturnType<typeof ctl.login>>
+
     // login with token //
-    if (token !== undefined) {
-        payload = await ctl.login(token)
-        if (payload.err !== undefined) return next(new Error('token 驗證失敗'))
-    
-    // login with email and password //
-    } else if (email !== undefined && password !== undefined) {
-        payload = await ctl.login(email, password)
-        if (payload.err !== undefined) return next(new Error('帳號或密碼錯誤')) // FIXME - error 的類型
-        
+    if (token || (email && password)) {
+        payload = await ctl.login({ token, email, password})
+        if (payload.err !== undefined) return next(new Error('驗證失敗'))
     } else {
         socket.disconnect(true)
         ctl.log('用戶沒有提供 token 或 email 和 password')
         return next(new Error('用戶沒有提供 token 或 email 和 password'))
     }
 
-    // TODO - 防止多端登錄
+    // if (token !== undefined) {
+    //     payload = await ctl.login(token)
+    //     if (payload.err !== undefined) return next(new Error('token 驗證失敗'))
     
-    // ...
-    // TODO - 先強制登出其他位置帳號
-    // ...
-    // const oldSocketID = user(email, 'socketID')
-    // if (oldSocketID) io.sockets.sockets[oldSocketID].disconnect(true)
+    // // login with email and password //
+    // } else if (email !== undefined && password !== undefined) {
+    //     payload = await ctl.login(email, password)
+    //     if (payload.err !== undefined) return next(new Error('帳號或密碼錯誤')) // FIXME - error 的類型
+    // } 
+
+    // 用戶成功登錄，獲取用戶資料
+    let user = await ctl.getUser(payload.userID)
+
+    // 防止多端登錄 先強制登出相同帳號
+    if (user.serverUserID) io.sockets.sockets.get(user.serverUserID)?.disconnect(true)
 
     // 成功登錄
     // TODO - 回傳 token 給 client
@@ -115,17 +82,19 @@ io.use(async (socket, next) => {
     socket.data.name   = payload.name
     socket.data.email  = payload.email
 
-    // OPT - 儲存對應的 socket id
-    let user = await ctl.db.repos.user.fetch(payload.userID)
-    user.serverUserID = socket.id
-    user = await ctl.db.repos.user.save(user)
+    // 儲存對應的 socket id
+    user = await ctl.setUser(payload.userID, { serverUserID: socket.id })
 
     ctl.log('[登錄]', socket.data.userID)
     return next()
 })
 
 io.on('connection', async socket => {
-    ctl.log('[已連接]', socket.data.userID)
+    
+    const userID = socket.data.userID
+    const userName = socket.data.name
+
+    ctl.log('[已連接] userID: ', userID, " name: ", userName)
 
     // 讀取離線消息
     // while (true) {
@@ -133,12 +102,13 @@ io.on('connection', async socket => {
     //     if (msg !== null) socket.emit('msg', { ok: true, msg })
     //     else break
     // }
-    let notifications = await ctl.checkForOfflineMessages(socket.data.userID)
+    let notifications = await ctl.checkForOfflineMessages(userID)
     if (notifications.length > 0) {
         socket.emit('notifications', notifications)
     }
     
-    let user = await ctl.db.repos.user.fetch(socket.data.userID) as User
+    // 聆聽群組
+    let user = await ctl.getUser(userID)
     await socket.join(user.groups)
 
     // 轉發訊息
@@ -158,7 +128,7 @@ io.on('connection', async socket => {
         }
         // 不在線
         else {
-            callback({ ok: false, message: '用戶不在線' })
+            callback(not('用戶不在線'))
             // 發到離線消息隊列
         }
     })

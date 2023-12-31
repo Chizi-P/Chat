@@ -27,7 +27,6 @@ import { ChatEvents, ChatError } from "./DatabaseType.js"
 class Controller {
 
     public db: RedisDatabase
-
     public config: Config
 
     constructor(){
@@ -38,8 +37,6 @@ class Controller {
     public async log(...message: Parameters<RedisDatabase['log']>): ReturnType<RedisDatabase['log']> {
         await this.db.log(...message)
     }
-
-    // 商業邏輯放呢邊
     
     private events : ChatRegisterEvent = {
         [ChatEvents.FriendInvitation]: {
@@ -81,19 +78,31 @@ class Controller {
         }
     }
 
-    registerEvent(name: keyof ChatRegisterEvent, eventData: ValueOf<ChatRegisterEvent>) {
+    public registerEvent(name: keyof ChatRegisterEvent, eventData: ValueOf<ChatRegisterEvent>) {
         this.events[name] = eventData
+    }
+
+    public async getUser(userID: string): Promise<User> {
+        return await this.db.repos.user.fetch(userID) as User
+    }
+    public async setUser(userID: string, data: Partial<User>): Promise<User> {
+        let user = await this.db.repos.user.fetch(userID) as User
+        Object.entries(data).forEach(([key, val])=> {
+            user[key] = val
+        })
+        return await this.db.repos.user.save(user) as User
+    }
+
+    public async emailExisted(email: string) {
+        return await this.db.existed('user', 'email', email)
     }
     
     public async createUser(
-        name: string, 
-        email: string, 
-        password: string, 
-        otherData?: Record<string, any>
+        name       : string, 
+        email      : string, 
+        password   : string, 
+        otherData? : Record<string, any>
     ): Promise<UserID | ChatError> {
-        // 檢查 email 是否已經存在
-
-        if (await this.db.repos.user.search().where('email').eq(email).return.count() > 0) return ChatError.EmailAlreadyExists
 
         let user = await this.db.repos.user.save({
             name, 
@@ -126,15 +135,52 @@ class Controller {
         return notificationID
     }
 
-    async login(token: string, password?: string): Promise<ResultWithChatError<{token: string, userID: UserID, name: string, email: string}>>
-    async login(email: string, password: string): Promise<ResultWithChatError<{token: string, userID: UserID, name: string, email: string}>>
-    async login(tokenOrEmail: string, password: string): Promise<ResultWithChatError<{token: string, userID: UserID, name: string, email: string}>> {
+    async loginWithToken(token: string) {
+        try {
+            let user = jwt.verify(token, this.config.privateKey) as jwt.UserJwtPayload
+            return { 
+                token  : token, 
+                userID : user.userID, 
+                name   : user.name,
+                email  : user.email
+            }
+        } catch(e) {
+            this.log(e as object)
+            return { err: ChatError.TokenValidationError }
+        }
+    }
+
+    async loginWithEmail(email: string, password: string) {
+        // 搜尋對應 email 的 user
+        let user = await this.db.repos.user.search().where('email').eq(email).return.first() as User
+        // user 是否存在 和 密碼是否正確
+        if (user === null || !await bcrypt.compare(password, user.hashedPassword)) return { err: ChatError.AccountOrPasswordError }
+        const userID = user[EntityId] as UserID
+
+        const token = jwt.sign({
+            userID   : userID, 
+            name     : user.name, 
+            email    : user.email, 
+            createAt : Date.now(),
+        }, this.config.privateKey)
+
+        return { 
+            token, 
+            userID, 
+            name  : user.name, 
+            email : user.email 
+        }
+    }
+
+    // TODO - delete
+    async login(data: { token?: string, email?: string, password?: string }): Promise<ResultWithChatError<{token: string, userID: UserID, name: string, email: string}>> {
+        const { token, email, password } = data
         // login with token
-        if (password === undefined) {
+        if (token) {
             try {
-                let user = jwt.verify(tokenOrEmail, this.config.privateKey) as jwt.UserJwtPayload
+                let user = jwt.verify(token, this.config.privateKey) as jwt.UserJwtPayload
                 return { 
-                    token  : tokenOrEmail, 
+                    token  : token, 
                     userID : user.userID, 
                     name   : user.name,
                     email  : user.email
@@ -146,27 +192,43 @@ class Controller {
         }
 
         // login with email and password
-        // 搜尋對應 email 的 user
-        let user = await this.db.repos.user.search().where('email').eq(tokenOrEmail).return.first() as User
-        // 檢測 user 是否存在 和 密碼是否正確
-        if (user === null || !await bcrypt.compare(password, user.hashedPassword)) return { err: ChatError.AccountOrPasswordError }
+        if (email && password) {
+            // 搜尋對應 email 的 user
+            let user = await this.db.repos.user.search().where('email').eq(email).return.first() as User
+            // user 是否存在 和 密碼是否正確
+            if (user === null || !await bcrypt.compare(password, user.hashedPassword)) return { err: ChatError.AccountOrPasswordError }
+            const userID = user[EntityId] as UserID
 
-        const userID = user[EntityId] as UserID
+            const token = jwt.sign({
+                userID   : userID, 
+                name     : user.name, 
+                email    : user.email, 
+                createAt : Date.now(),
+            }, this.config.privateKey)
 
-        const token = jwt.sign({
-            userID   : userID, 
-            name     : user.name, 
-            email    : user.email, 
-            createAt : Date.now(),
-        }, this.config.privateKey)
+            return { 
+                token, 
+                userID, 
+                name  : user.name, 
+                email : user.email 
+            }
+        }
 
-        return { token, userID, name: user.name, email: user.email }
+        return { err: ChatError.AccountOrPasswordError }
     }
 
     
     // async task(taskData: { from: UserID, to: UserID,            eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
     // async task(taskData: { from: UserID, to: UserID[],          eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
-    async task(taskData: { from: UserID, to: UserID | UserID[], eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]> {
+    async task(
+        taskData: { 
+            from      : UserID, 
+            to        : UserID | UserID[], 
+            eventType : ChatEvents, 
+            creator?  : UserID, 
+            content?  : string 
+        }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]> {
+        
         const { from, eventType } = taskData
         const to = Array.isArray(taskData.to) ? taskData.to: [taskData.to]
         const creator = taskData.creator ?? from
@@ -180,7 +242,6 @@ class Controller {
                 .where('from').eq(from)
                 .and('to').eq(toUser)
                 .and('eventType').eq(eventType).return.count() > 0
-                // .and('content').eq(content).returnCount() > 0;
             if (isExisted) {
                 this.log('task is existed')
                 return
@@ -350,12 +411,3 @@ export {
 
 // 生成單例
 // export const ContollerInstance = Singleton(Controller)
-
-
-
-
-
-
-
-
-

@@ -47,6 +47,7 @@ web_modules/
 
 # TypeScript cache
 *.tsbuildinfo
+build/
 
 # Optional npm cache directory
 .npm
@@ -126,4 +127,3 @@ dist
 .yarn/install-state.gz
 .pnp.*
 .config.ts
-build/
