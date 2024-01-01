@@ -17,6 +17,11 @@ router.get('/users/register', (req, res) => {
     res.json('register page')
 })
 
+// 登入頁面
+router.get('/users/login', (req, res) => {
+    res.json('login page')
+})
+
 // 註冊請求
 router.post('/users/register', 
     body('name')
@@ -37,11 +42,6 @@ router.post('/users/register',
     }
 )
 
-// 登入頁面
-router.get('/users/login', (req, res) => {
-    res.json('login page')
-})
-
 // 登入請求
 router.post('/users/login', 
     body('email')
@@ -61,6 +61,26 @@ router.post('/users/login',
             token : user.token
         }
         return next()
+    }
+)
+
+// TODO - 處理沒有對應的ID
+router.post('/users/data',
+    body('userID').notEmpty().withMessage('需要 userID'),
+    handleValidationResult,
+    async (req, res) => {
+        const userPublicData = await ctl.getPublicData('user', req.body.userID)
+        console.log(userPublicData)
+        return res.json(userPublicData)
+    }
+)
+// TODO - 處理沒有對應的ID
+router.post('/groups/data',
+    body('groupID').notEmpty().withMessage('需要 groupID'),
+    handleValidationResult,
+    async (req, res) => {
+        const userPublicData = await ctl.getPublicData('group', req.body.userID)
+        return res.json(userPublicData)
     }
 )
 

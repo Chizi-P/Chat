@@ -69,7 +69,7 @@ io.use(async (socket, next) => {
     // } 
 
     // 用戶成功登錄，獲取用戶資料
-    let user = await ctl.getUser(payload.userID)
+    let user = await ctl.getData('user', payload.userID)
 
     // 防止多端登錄 先強制登出相同帳號
     if (user.serverUserID) io.sockets.sockets.get(user.serverUserID)?.disconnect(true)
@@ -108,7 +108,7 @@ io.on('connection', async socket => {
     }
     
     // 聆聽群組
-    let user = await ctl.getUser(userID)
+    let user = await ctl.getData('user', userID)
     await socket.join(user.groups)
 
     // 轉發訊息
@@ -117,20 +117,16 @@ io.on('connection', async socket => {
 
         ctl.log('[傳訊息]', from, ':', content, '=>', toGroupID)
 
-        io.to(toGroupID).emit('message', from, content)
+        // io.to(toGroupID).emit('message', from, content)
+        io.to(toGroupID).emit('message', toGroupID, { from, content }, res => {
+            if (res?.ok) {
+                console.log('已轉發')
+            } else {
+                console.log('轉發失敗')
+            }
+        })
         await ctl.sendMessage(from, toGroupID, content)
-
-        // OPT to user 有 socketID 的話代表在線
-        
-        // 在線
-        if (true) {
-            callback(ok('已傳送'))
-        }
-        // 不在線
-        else {
-            callback(not('用戶不在線'))
-            // 發到離線消息隊列
-        }
+        callback?.(ok('已發送'))
     })
 
     socket.on('friendInvitation', async (to, callback) => {
@@ -162,7 +158,7 @@ io.on('connection', async socket => {
         // 如果對方也在線上，通知對方有人想添加他為好友
         // io.to(await user(to, 'socketID')).emit('friendRequest', { ok: true, msg: `${from} 把您設為好友`, system: true })
 
-        callback(ok('已發送好友邀請'))
+        callback?.(ok('已發送好友邀請'))
     })
 
     socket.on('groupInvitation',async (groupID, invitedMembers) => {
@@ -170,7 +166,9 @@ io.on('connection', async socket => {
         await ctl.groupInvitation(inviter, groupID, invitedMembers)
     })
 
+    // TODO: 判斷 task 是否屬於這個用戶
     socket.on('confirm', async taskID => {
+        console.log('confirm', taskID)
         await ctl.finishTask(taskID)
     })
 

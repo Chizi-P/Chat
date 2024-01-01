@@ -31,6 +31,7 @@ const schemasArgs = {
         isOnline       : { type: 'boolean' },  // 是否在線
         lastOnlineTime : { type: 'date' },     // date
         serverUserID   : { type: 'string' },   // server 給 user 的 ID 比如 socket.io 的 socket.id
+        // lastEditedTime : { type: 'date' },     // 最後編輯時間
     },
     group: {
         name      : { type: 'string' },

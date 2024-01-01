@@ -22,12 +22,21 @@ import type {
     ResultWithChatError,
 } from "./DatabaseType.js"
 import { ChatEvents, ChatError } from "./DatabaseType.js"
+import { RepositoriesDataType, RepositoriesType } from './schema.js'
 
 
 class Controller {
 
-    public db: RedisDatabase
-    public config: Config
+    public db     : RedisDatabase
+    public config : Config
+
+    public publicData : { [key: string]: string[] } = {
+        user  : ['name', 'avatar', 'isOnline'],
+        group : ['name', 'creator', 'avatar', 'createAt']
+    }
+    
+    
+    
 
     constructor(){
         this.config = { privateKey: cfg.privateKey }
@@ -82,10 +91,22 @@ class Controller {
         this.events[name] = eventData
     }
 
-    public async getUser(userID: string): Promise<User> {
-        return await this.db.repos.user.fetch(userID) as User
+    public async getData<T extends keyof RepositoriesType>(repo: T, id: string) {
+        return await this.db.repos[repo].fetch(id) as RepositoriesDataType[T]
     }
-    public async setUser(userID: string, data: Partial<User>): Promise<User> {
+
+    public async setData<T extends keyof RepositoriesType>(repo: T, id: string, data: Partial<RepositoriesDataType[T]>) {
+        let obj = await this.db.repos[repo].fetch(id)
+        Object.entries(data).forEach(([key, val])=> {
+            obj[key] = val
+        })
+        return await this.db.repos[repo].save(obj) as RepositoriesDataType[T]
+    } 
+
+    // public async getUser(userID: UserID): Promise<User> {
+    //     return await this.db.repos.user.fetch(userID) as User
+    // }
+    public async setUser(userID: UserID, data: Partial<User>): Promise<User> {
         let user = await this.db.repos.user.fetch(userID) as User
         Object.entries(data).forEach(([key, val])=> {
             user[key] = val
@@ -95,6 +116,22 @@ class Controller {
 
     public async emailExisted(email: string) {
         return await this.db.existed('user', 'email', email)
+    }
+
+    public async getPublicData<T extends keyof RepositoriesType>(repo: T, id: string) {
+        return await this.db.filter(repo, id, ([key, val]) => this.publicData[repo].includes(key))
+    }
+
+    public async pickData<T extends keyof RepositoriesType>(repo: T, id: string, pick: string[]) {
+        return await this.db.filter(repo, id, ([key, val]) => pick.includes(key))
+    }
+
+    public async getGroupPublicData(groupID: GroupID) {
+        let group = await this.db.repos.group.fetch(groupID) as Group
+        const groupPublicDataKey = ['name', 'avatar', 'isOnline'] as const
+        type GroupPublicData = Pick<User, keyof ValueOf<typeof groupPublicDataKey>>
+        const groupPublicData: GroupPublicData = Object.entries(group).filter(([key, val]) => key in groupPublicDataKey)
+        return groupPublicData
     }
     
     public async createUser(

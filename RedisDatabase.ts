@@ -60,7 +60,16 @@ class RedisDatabase {
     public async existed(repo: keyof RepositoriesType, field: string, val: string) {
         return await this.repos[repo].search().where(field).eq(val).return.count() > 0
     }
-        
+
+    public async filter<T extends keyof RepositoriesType>(
+        repo: T, 
+        id: string, 
+        predicate: Parameters<Array<[string, any]>['filter']>[0]
+    ) {
+        const data = await this.repos[repo].fetch(id) as RepositoriesDataType[T]
+        return Object.fromEntries(Object.entries(data).filter(predicate))
+    }
+
     public async quit() {
         return await this.db.quit()
     }
