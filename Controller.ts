@@ -60,9 +60,11 @@ class Controller {
             finish: async task => {
                 this.log('FriendInvitation task finish')
                 const { from, to, content, eventType } = task
+                await this.db.push('user', from, 'friends', to)
+                await this.db.push('user', to, 'friends', from)
                 const groupID = await this.createDirectGroup(from, to)
-                await this.db.push('user', from, 'friends', groupID)
-                await this.db.push('user', to, 'friends', groupID)
+                await this.db.push('user', from, 'groups', groupID)
+                await this.db.push('user', to, 'groups', groupID)
                 // 發送通知
                 await this.notify(from, to, content, eventType)
                 return groupID

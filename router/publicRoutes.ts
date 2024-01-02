@@ -69,6 +69,13 @@ router.post('/users/data',
     body('userID').notEmpty().withMessage('需要 userID'),
     handleValidationResult,
     async (req, res) => {
+        if (Array.isArray(req.body.userID)) {
+            const userPublicDatas = await Promise.all(req.body.userID.map((id: string) => {
+                return ctl.getPublicData('user', id)
+            }))
+            console.log(userPublicDatas)
+            return res.send(userPublicDatas)
+        }
         const userPublicData = await ctl.getPublicData('user', req.body.userID)
         console.log(userPublicData)
         return res.json(userPublicData)

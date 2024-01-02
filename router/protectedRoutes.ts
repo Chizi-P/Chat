@@ -26,8 +26,6 @@ router.use(
 )
 
 router.post('/user/data', 
-    // body('userID').notEmpty().withMessage('需要 userID'),
-    // handleValidationResult,
     async (req, res) => {
         let user = await ctl.getData('user', req.user.userID)
         // 忽略 hashedPassword
