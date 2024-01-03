@@ -25,6 +25,7 @@ const schemasArgs = {
         createAt       : { type: 'date' },     // timestamp
         friends        : { type: 'string[]' }, // userID[]
         groups         : { type: 'string[]' }, // groupID[]
+        directGroups   : { type: 'string[]' }, // groupID[]
         notifications  : { type: 'string[]' }, // notifyID[]
         tasks          : { type: 'string[]' }, // taskID[]
         tracking       : { type: 'string[]' }, // taskID[] 可以用搜尋的方法取代他

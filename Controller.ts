@@ -63,8 +63,8 @@ class Controller {
                 await this.db.push('user', from, 'friends', to)
                 await this.db.push('user', to, 'friends', from)
                 const groupID = await this.createDirectGroup(from, to)
-                await this.db.push('user', from, 'groups', groupID)
-                await this.db.push('user', to, 'groups', groupID)
+                await this.db.push('user', from, 'directGroups', groupID)
+                await this.db.push('user', to, 'directGroups', groupID)
                 // 發送通知
                 await this.notify(from, to, content, eventType)
                 return groupID

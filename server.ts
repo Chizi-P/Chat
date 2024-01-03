@@ -34,8 +34,8 @@ app.use(express.urlencoded({extended: false}))
 app.use(express.json())
 
 // 掛載路由
-app.use('/public', publicRoutes)
-app.use('/protected', protectedRoutes)
+app.use('/api/public', publicRoutes)
+app.use('/api/protected', protectedRoutes)
 
 // ------------------------------- //
 
@@ -118,7 +118,7 @@ io.on('connection', async socket => {
         ctl.log('[傳訊息]', from, ':', content, '=>', toGroupID)
 
         // io.to(toGroupID).emit('message', from, content)
-        io.to(toGroupID).emit('message', toGroupID, { from, content }, res => {
+        io.to(toGroupID).emit('message', toGroupID, from, content, res => {
             if (res?.ok) {
                 console.log('已轉發')
             } else {

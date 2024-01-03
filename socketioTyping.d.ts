@@ -7,7 +7,7 @@ export interface ClientToServerEvents {
 
 export interface ServerToClientEvents {
     notifications    : (notifications: any) => void
-    message          : (toGroupID: string, { from: string, content: string }, callback: (res) => void) => void
+    message          : (toGroupID: string, from: string, content: string, callback: (res) => void) => void
     friendInvitation : (from: string) => void
 }
 
