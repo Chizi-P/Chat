@@ -93,6 +93,17 @@ class Controller {
         this.events[name] = eventData
     }
 
+    public async userExisted(userID: UserID) {
+        return await this.db.db.exists(`user:${userID}`)
+    }
+
+    public omit<T extends ValueOf<RepositoriesDataType>>(obj: T, omitKeys: string | string[]): Partial<T> {
+        if (!Array.isArray(omitKeys)) omitKeys = [omitKeys]
+        return Object.fromEntries(
+            Object.entries(obj).filter(([key]) => !omitKeys.includes(key))
+        ) as Partial<T>
+    }
+
     public async getData<T extends keyof RepositoriesType>(repo: T, id: string) {
         return await this.db.repos[repo].fetch(id) as RepositoriesDataType[T]
     }
@@ -141,9 +152,9 @@ class Controller {
         email      : string, 
         password   : string, 
         otherData? : Record<string, any>
-    ): Promise<UserID | ChatError> {
+    ): Promise<User | ChatError> {
 
-        let user = await this.db.repos.user.save({
+        const user = await this.db.repos.user.save({
             name, 
             email, 
             hashedPassword : await hash(password),
@@ -155,7 +166,7 @@ class Controller {
             // tracking       : [], // TODO: 試試看 tracking 沒有輸入會有什麼結果
             ...otherData ?? {},
         }) as User
-        return user[EntityId] as UserID
+        return user
     }
 
     // 通知

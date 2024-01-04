@@ -7,7 +7,7 @@ import { createRepositories, RepositoriesType } from './schema.js'
 
 class RedisDatabase {
 
-    private db             : RedisClientType
+    public  db             : RedisClientType
     private redisOptions?  : RedisClientOptions // FIXME: use options
     public  repos          : RepositoriesType
     private logger         : Logger

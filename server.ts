@@ -1,12 +1,12 @@
-import express from 'express'
+import express, { Router } from 'express'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { parse } from 'cookie'
 import jwt from 'jsonwebtoken'
 
-import publicRoutes from './router/publicRoutes.js'
-import protectedRoutes from './router/protectedRoutes.js'
-import { ok, not } from './router/func.js'
+import publicRoutes from './src/routes/publicRoutes.js'
+import protectedRoutes from './src/routes/protectedRoutes.js'
+import { ok, not } from './src/routes/func.js'
 
 import { ChatError, User } from './DatabaseType.js'
 import * as cfg from './.config.js'
@@ -19,7 +19,7 @@ import {
 
 import { Controller } from "./Controller.js"
 
-const ctl = new Controller()
+export const ctl = new Controller()
 
 const app = express()
 const httpServer = createServer(app)
@@ -33,9 +33,14 @@ const io = new Server<
 app.use(express.urlencoded({extended: false}))
 app.use(express.json())
 
+const api = Router()
+const apiVersion = 1
+
+app.use(`/api/v${apiVersion}`, api)
+
 // 掛載路由
-app.use('/api/public', publicRoutes)
-app.use('/api/protected', protectedRoutes)
+api.use('/public', publicRoutes)
+api.use('/protected', protectedRoutes)
 
 // ------------------------------- //
 

@@ -1,40 +1,30 @@
 import { NextFunction, Router, Request, Response } from 'express'
 import { body } from 'express-validator'
-import { Controller } from '../Controller.js'
+import { Controller } from '../../Controller.js'
 
-import { handleValidationResult, ok, not } from './func.js'
-import { RepositoriesType } from '../schema.js'
+import { RepositoriesType } from '../../schema.js'
+
+import {
+    handleValidationResult,
+    validateToken,
+    getSelf,
+    updateSelf,
+    deleteSelf,
+} from './middleware.js'
+
 
 const router = Router()
 
 const ctl = new Controller()
 
-router.use(
-    body('token').notEmpty().withMessage('需要 token'),
-    handleValidationResult,
-    async (req, res, next) => {
-        let user = await ctl.loginWithToken(req.body.token)
-        if (user.err !== undefined) return res.json(not(user.err))
-        
-        req.user = {
-            userID : user.userID,
-            name   : user.name,
-            email  : user.email,
-            token  : user.token
-        }
-        return next()
-    }
-)
+// 需要 token 驗證
+router.use(validateToken)
 
-router.post('/user/data', 
-    async (req, res) => {
-        let user = await ctl.getData('user', req.user.userID)
-        // 忽略 hashedPassword
-        const { hashedPassword, ...userData } = user
-        return res.json(userData)
-    }
-)
+router.get('/self', getSelf)
+router.put('/self', updateSelf)
+router.delete('/self', deleteSelf)
 
+// FIXME
 // 檢查用戶是否有權限訪問這個id
 async function checkPermissions(repo: keyof RepositoriesType, key: string | string[], bodyKey: string) {
     return async (req: Request, res: Response, next: NextFunction) => {
@@ -44,10 +34,11 @@ async function checkPermissions(repo: keyof RepositoriesType, key: string | stri
             const val = user[e]
             return Array.isArray(val) && val.includes(req.body[bodyKey])
         })) return next()
-        return res.json(not(`沒有權限訪問 ${req.body[bodyKey]}`))
+        return res.status(401).send(`沒有權限訪問 ${req.body[bodyKey]}`)
     }
 }
 
+// FIXME
 router.post('/group/data',
     body('groupID').notEmpty().withMessage('需要 groupID'),
     handleValidationResult,
@@ -63,19 +54,21 @@ router.post('/group/data',
 // TODO - 根據最後一條 messageID 返回之後的數據
 // TODO - 展開所有數據
 
+// FIXME
 router.post('/message/data',
     body('messageID').notEmpty().withMessage('需要 messageID'),
     handleValidationResult,
     async (req, res) => {
         const message = await ctl.getData('message', req.body.messageID)
         if (!(message.from === req.user.userID || message.to === req.user.userID)) {
-            return res.json(not(`沒有權限訪問 ${req.body.messageID}`))
+            return res.status(401).send(`沒有權限訪問 ${req.body.messageID}`)
         }
         console.log('message', message)
         return res.json(message)
     }
 )
 
+// FIXME
 // OPT - 獲取多條
 router.post('/task/data',
     body('taskID').notEmpty().withMessage('需要 taskID'),
