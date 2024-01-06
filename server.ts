@@ -4,8 +4,12 @@ import { Server } from 'socket.io'
 import { parse } from 'cookie'
 import jwt from 'jsonwebtoken'
 
-import publicRoutes from './src/routes/publicRoutes.js'
-import protectedRoutes from './src/routes/protectedRoutes.js'
+import { validateToken } from './src/controllers/middleware.js'
+import usersRouter from './src/routes/usersRoutes.js'
+import groupsRouter from './src/routes/groupsRoutes.js'
+import messagesRouter from './src/routes/messagesRoutes.js'
+import tasksRouter from './src/routes/tasksRoutes.js'
+
 import { ok, not } from './src/routes/func.js'
 
 import { ChatError, User } from './DatabaseType.js'
@@ -34,13 +38,15 @@ app.use(express.urlencoded({extended: false}))
 app.use(express.json())
 
 const api = Router()
-const apiVersion = 1
 
-app.use(`/api/v${apiVersion}`, api)
+app.use('/api/v1', api)
+api.use(validateToken)
 
 // 掛載路由
-api.use('/public', publicRoutes)
-api.use('/protected', protectedRoutes)
+api.use(usersRouter)
+api.use(groupsRouter)
+api.use(messagesRouter)
+api.use(tasksRouter)
 
 // ------------------------------- //
 

@@ -21,9 +21,7 @@ type Task           = RepositoriesDataType['task'] & { eventType: ChatEvents }
 enum ChatEvents {
     SendMessage            = 'sendMessage',         // 發送訊息
     FriendInvitation       = 'friendInvitation',    // 好友邀請
-    // FriendConfirmation     = 'friendConfirmation',  // 確認好友關係
     GroupInvitation        = 'groupInvitation',     // 群組邀請
-    // GroupConfirmation      = 'groupConfirmation',   // 確認加入群組
 }
 
 enum ChatError {

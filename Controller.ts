@@ -17,11 +17,10 @@ import type {
     Group,
     Message,
     Notification,
-    Task,
     ChatRegisterEvent,
     ResultWithChatError,
 } from "./DatabaseType.js"
-import { ChatEvents, ChatError } from "./DatabaseType.js"
+import { ChatEvents, ChatError, Task } from "./DatabaseType.js"
 import { RepositoriesDataType, RepositoriesType } from './schema.js'
 
 
@@ -31,8 +30,10 @@ class Controller {
     public config : Config
 
     public publicData : { [key: string]: string[] } = {
-        user  : ['name', 'avatar', 'isOnline'],
-        group : ['name', 'creator', 'avatar', 'createAt']
+        user    : ['name', 'avatar', 'isOnline'],
+        group   : ['name', 'creator', 'avatar', 'createAt'],
+        message : [],
+        task    : [],
     }
     
     
@@ -95,6 +96,18 @@ class Controller {
 
     public async userExisted(userID: UserID) {
         return await this.db.db.exists(`user:${userID}`)
+    }
+
+    public async groupExisted(groupID: GroupID) {
+        return await this.db.db.exists(`group:${groupID}`)
+    }
+
+    public async messageExisted(messageID: MessageID) {
+        return await this.db.db.exists(`message:${messageID}`)
+    }
+
+    public async taskExisted(taskId: TaskID) {
+        return await this.db.db.exists(`task:${taskId}`) 
     }
 
     public omit<T extends ValueOf<RepositoriesDataType>>(obj: T, omitKeys: string | string[]): Partial<T> {
@@ -270,7 +283,7 @@ class Controller {
     
     // async task(taskData: { from: UserID, to: UserID,            eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
     // async task(taskData: { from: UserID, to: UserID[],          eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
-    async task(
+    async createTask(
         taskData: { 
             from      : UserID, 
             to        : UserID | UserID[], 
@@ -286,6 +299,8 @@ class Controller {
 
         let taskIDs: TaskID[] = []
         let eventResults: Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[] = []
+        let tasks: Task[] = []
+
         to.forEach(async toUser => {
 
             const isExisted = await this.db.repos.task.search()
@@ -312,10 +327,12 @@ class Controller {
             const eventResult = await this.events[eventType]?.action?.call(this.db, task)
             eventResults.push(eventResult)
             taskIDs.push(taskID)
+
+            tasks.push(task)
         })
         await this.db.push('user', from, 'tracking', ...taskIDs)
 
-        return eventResults
+        return tasks
     }
     
     async cancelTask(taskID: TaskID) {
@@ -349,15 +366,11 @@ class Controller {
     }
 
     async FriendInvitation(from: UserID, to: UserID): Promise<any[]> {
-        return await this.task({
+        return await this.createTask({
             from, 
             to, 
             eventType: ChatEvents.FriendInvitation
         })
-    }
-    
-    async FriendConfirmation(taskID: TaskID, /* from: UserID, to: UserID */): Promise<any[]> {
-        return await this.finishTask(taskID)
     }
 
     async createDirectGroup(user1: UserID, user2: UserID): Promise<GroupID> {
@@ -375,7 +388,7 @@ class Controller {
 
     async groupInvitation(inviter: UserID, groupID: GroupID, invitedMembers: UserID | UserID[]) {
         if (!invitedMembers.length) return
-        return await this.task({
+        return await this.createTask({
             creator   : inviter,
             from      : groupID,
             to        : invitedMembers, 
@@ -383,10 +396,7 @@ class Controller {
         })
     }
 
-    async groupConfirmation(taskID: TaskID, /* userID: UserID, groupID: GroupID */) {
-        return await this.finishTask(taskID)
-    }
-    async createGroup(name: string, creator: UserID, avatar: string, invitedMembers: UserID[] = []): Promise<GroupID> {
+    async createGroup(name: string, creator: UserID, avatar: string, invitedMembers: UserID[] = []): Promise<Group> {
         
         let group = await this.db.repos.group.save({
             name,
@@ -405,9 +415,33 @@ class Controller {
 
         await this.groupInvitation(creator, groupID, invitedMembers)
 
-        return groupID
+        return group
     }
 
+    async isMember(userID: UserID, groupID: GroupID) {
+        const group = await this.db.repos.group.fetch(groupID) as Group
+        return group.members.includes(userID)
+    }
+
+    async createMessage(from: UserID, to: GroupID, content: string): Promise<Message> {
+        let message = await this.db.repos.message.save({
+            from,
+            to,
+            content,
+            createAt: new Date(),
+            readers: [from]
+        }) as Message
+
+        const messageID = message[EntityId] as MessageID
+
+        // 直接寫到 group 的 messages 中
+        await this.db.push('group', to, 'messages', messageID)
+        // 發送通知
+        await this.notify(from, to, content, ChatEvents.SendMessage)
+        return message
+    }
+
+    // FIXME - delete
     async sendMessage(from: UserID, to: GroupID, content: string): Promise<MessageID> {
 
         let message = await this.db.repos.message.save({
@@ -430,7 +464,7 @@ class Controller {
 
         } else if (method === 2) {
             // 2: 寫成 task，等第一個用戶在線再寫到 group 的 messages 中
-            await this.task({
+            await this.createTask({
                 from,
                 to,
                 creator   : from,
