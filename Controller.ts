@@ -30,13 +30,11 @@ class Controller {
     public config : Config
 
     public publicData : { [key: string]: string[] } = {
-        user    : ['name', 'avatar', 'isOnline'],
-        group   : ['name', 'creator', 'avatar', 'createAt'],
+        user    : ['id', 'name', 'avatar', 'isOnline'],
+        group   : ['id', 'name', 'creator', 'avatar', 'createAt'],
         message : [],
         task    : [],
     }
-    
-    
     
 
     constructor(){
@@ -167,7 +165,7 @@ class Controller {
         otherData? : Record<string, any>
     ): Promise<User | ChatError> {
 
-        const user = await this.db.repos.user.save({
+        let user = await this.db.repos.user.save({
             name, 
             email, 
             hashedPassword : await hash(password),
@@ -179,6 +177,9 @@ class Controller {
             // tracking       : [], // TODO: 試試看 tracking 沒有輸入會有什麼結果
             ...otherData ?? {},
         }) as User
+        user.id = user[EntityId] as string
+        user = await this.db.repos.user.save(user) as User
+
         return user
     }
 
@@ -191,6 +192,9 @@ class Controller {
             content,
             createAt: new Date()
         }) as Notification
+
+        notification.id = notification[EntityId] as string
+        notification = await this.db.repos.user.save(notification) as Notification
 
         const notificationID = notification[EntityId] as NotificationID
         await this.db.push('user', from, 'notifications', notificationID)
@@ -320,6 +324,8 @@ class Controller {
                 createAt: new Date(),
                 content,
             }) as Task
+            task.id = task[EntityId] as string
+            task = await this.db.repos.user.save(task) as Task
 
             const taskID = task[EntityId] as TaskID
             await this.db.push('user', toUser, 'tasks', taskID)
@@ -381,6 +387,8 @@ class Controller {
             messages : [],
             isDirect : true
         }) as Group
+        group.id = group[EntityId] as string
+        group = await this.db.repos.user.save(group) as Group
 
         const groupID = group[EntityId] as GroupID
         return groupID
@@ -407,6 +415,8 @@ class Controller {
             messages : [],
             isDirect : false
         }) as Group
+        group.id = group[EntityId] as string
+        group = await this.db.repos.user.save(group) as Group
 
         const groupID = group[EntityId] as GroupID
         
@@ -431,6 +441,8 @@ class Controller {
             createAt: new Date(),
             readers: [from]
         }) as Message
+        message.id = message[EntityId] as string
+        message = await this.db.repos.user.save(message) as Message
 
         const messageID = message[EntityId] as MessageID
 
@@ -442,40 +454,40 @@ class Controller {
     }
 
     // FIXME - delete
-    async sendMessage(from: UserID, to: GroupID, content: string): Promise<MessageID> {
+    // async sendMessage(from: UserID, to: GroupID, content: string): Promise<MessageID> {
 
-        let message = await this.db.repos.message.save({
-            from,
-            to,
-            content,
-            createAt: new Date(),
-            readers: [from]
-        }) as Message
+    //     let message = await this.db.repos.message.save({
+    //         from,
+    //         to,
+    //         content,
+    //         createAt: new Date(),
+    //         readers: [from]
+    //     }) as Message
 
-        const messageID = message[EntityId] as MessageID
+    //     const messageID = message[EntityId] as MessageID
 
-        // FIXME: 兩個方法
-        const method = 1
-        if (method === 1) {
-            // 1: 直接寫到 group 的 messages 中
-            await this.db.push('group', to, 'messages', messageID)
-            // 發送通知
-            await this.notify(from, to, content, ChatEvents.SendMessage)
+    //     // FIXME: 兩個方法
+    //     const method = 1
+    //     if (method === 1) {
+    //         // 1: 直接寫到 group 的 messages 中
+    //         await this.db.push('group', to, 'messages', messageID)
+    //         // 發送通知
+    //         await this.notify(from, to, content, ChatEvents.SendMessage)
 
-        } else if (method === 2) {
-            // 2: 寫成 task，等第一個用戶在線再寫到 group 的 messages 中
-            await this.createTask({
-                from,
-                to,
-                creator   : from,
-                eventType : ChatEvents.SendMessage,
-                content
-            })
-            // 發送通知
-            await this.notify(from, to, content, ChatEvents.SendMessage)
-        }
-        return messageID
-    }
+    //     } else if (method === 2) {
+    //         // 2: 寫成 task，等第一個用戶在線再寫到 group 的 messages 中
+    //         await this.createTask({
+    //             from,
+    //             to,
+    //             creator   : from,
+    //             eventType : ChatEvents.SendMessage,
+    //             content
+    //         })
+    //         // 發送通知
+    //         await this.notify(from, to, content, ChatEvents.SendMessage)
+    //     }
+    //     return messageID
+    // }
 
     async readMsg(reader: UserID, messageID: MessageID) {
         return await this.db.push('message', messageID, 'readers', reader)

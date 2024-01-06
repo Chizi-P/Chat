@@ -5,10 +5,10 @@ import { parse } from 'cookie'
 import jwt from 'jsonwebtoken'
 
 import { validateToken } from './src/controllers/middleware.js'
-import usersRouter from './src/routes/usersRoutes.js'
-import groupsRouter from './src/routes/groupsRoutes.js'
+import usersRouter    from './src/routes/usersRoutes.js'
+import groupsRouter   from './src/routes/groupsRoutes.js'
 import messagesRouter from './src/routes/messagesRoutes.js'
-import tasksRouter from './src/routes/tasksRoutes.js'
+import tasksRouter    from './src/routes/tasksRoutes.js'
 
 import { ok, not } from './src/routes/func.js'
 
@@ -40,6 +40,13 @@ app.use(express.json())
 const api = Router()
 
 app.use('/api/v1', api)
+
+api.use((req, res, next) => {
+    console.log('收到請求:', req.method, req.url)
+    req.body ?? console.table(req.body)
+    next()
+});
+
 api.use(validateToken)
 
 // 掛載路由
@@ -136,7 +143,7 @@ io.on('connection', async socket => {
                 console.log('轉發失敗')
             }
         })
-        await ctl.sendMessage(from, toGroupID, content)
+        await ctl.createMessage(from, toGroupID, content)
         callback?.(ok('已發送'))
     })
 

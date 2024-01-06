@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express'
-import { body, param, validationResult } from 'express-validator'
+import { body, header, param, validationResult } from 'express-validator'
 import { ctl } from '../../server.js'
 
 function handleValidationResult(req: Request, res: Response, next: NextFunction) {
@@ -9,10 +9,14 @@ function handleValidationResult(req: Request, res: Response, next: NextFunction)
 }
 
 const validateToken = [
-    body('token').notEmpty().withMessage('需要 token'),
+    // body('token').notEmpty().withMessage('需要 token'),
+    header('Authorization')
+        .notEmpty().withMessage('需要 Authorization').bail()
+        .contains("Bearer").withMessage("Authorization Token is not Bearer"),
     handleValidationResult,
     async (req: Request, res: Response, next: NextFunction) => {
-        const user = await ctl.loginWithToken(req.body.token)
+        const token = req.headers.authorization!.split(" ")[1]
+        const user = await ctl.loginWithToken(token)
         if (user.err !== undefined) return res.status(401).send(user.err)
         
         req.user = {

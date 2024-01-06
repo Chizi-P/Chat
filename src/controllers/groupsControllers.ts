@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import { body, param } from 'express-validator'
 import { ctl } from '../../server.js'
-import { Group } from '../../DatabaseType.js'
+import { Group, User } from '../../DatabaseType.js'
 
 import { handleValidationResult } from './middleware.js'
 
@@ -45,10 +45,21 @@ const getGroup = [
     handleValidationResult,
     async (req: Request, res: Response, next: NextFunction) => {
         const { id } = req.params
-        const group = await ctl.isMember(req.user.userID, id) 
-            ? await ctl.db.repos.group.fetch(id) 
-            : await ctl.getPublicData('group', id)
-        return res.status(200).send(group)
+        let group = await ctl.db.repos.group.fetch(id) as Group
+        if (await ctl.isMember(req.user.userID, id)) {
+            // 如果是私人群 設定對方用戶名稱為群組名稱
+            if (group.isDirect) {
+                const otherSideID = (group.members as Group['members']).filter(e => e !== req.user.userID)[0]
+                const otherSideUser = await ctl.db.repos.user.fetch(otherSideID) as User
+                group.name = otherSideUser.name
+            }
+            return res.status(200).send(group)
+        } else if (!group.isDirect) {
+            const groupPublicData = await ctl.getPublicData('group', id)
+            return res.status(200).send(groupPublicData)
+        } else {
+            return res.status(401).send('沒有權限訪問')
+        }
     }
 ]
 

@@ -18,6 +18,7 @@ import type {
 
 const schemasArgs = {
     user: {
+        id             : { type: 'string' },
         name           : { type: 'string' },
         email          : { type: 'string'},    // unique email
         hashedPassword : { type: 'string' },   // hashed password
@@ -35,6 +36,7 @@ const schemasArgs = {
         // lastEditedTime : { type: 'date' },     // 最後編輯時間
     },
     group: {
+        id        : { type: 'string' },
         name      : { type: 'string' },
         creator   : { type: 'string' },   // userID
         avatar    : { type: 'string' },   // image src url
@@ -45,6 +47,7 @@ const schemasArgs = {
         // hierarchy : {}
     },
     message: {
+        id       : { type: 'string' },
         from     : { type: 'string' },   // userID
         to       : { type: 'string' },   // groupID
         content  : { type: 'string' },   // msg content | JSON
@@ -52,6 +55,7 @@ const schemasArgs = {
         readers  : { type: 'string[]' }  // userID[]
     },
     notification: {
+        id        : { type: 'string' },
         from      : { type: 'string' },   // userID
         to        : { type: 'string' },   // userID
         eventType : { type: 'string' },   // 暫時不用
@@ -60,7 +64,7 @@ const schemasArgs = {
         createAt  : { type: 'date' },     // userID | system
     },
     task: {
-        // memberType : { type: 'string' },   // 
+        id         : { type: 'string' },
         from       : { type: 'string' },   // userID | groupID
         to         : { type: 'string' }, // userID
         eventType  : { type: 'string' },   // 

@@ -37,23 +37,18 @@ const createUser = [
     }
 ]
 
+// TODO - 展開數據中的 id
 const getUser = [
     paramIdExisted,
     handleValidationResult,
     async (req: Request, res: Response, next: NextFunction) => {
         const { id } = req.params
         const user = id === req.user.userID 
-            ? await ctl.db.repos.user.fetch(req.user.userID) 
+            ? ctl.omit(await ctl.db.repos.user.fetch(req.user.userID) as User, 'hashedPassword')
             : await ctl.getPublicData('user', id)
         return res.status(200).send(user)
     }
 ]
-
-// TODO - 展開數據中的 id
-// async function getSelf(req: Request, res: Response, next: NextFunction) {
-//     const user = await ctl.db.repos.user.fetch(req.user.userID)
-//     return res.status(200).send(user)
-// }
 
 const updateUser = [
     paramIdExisted,
@@ -124,9 +119,34 @@ const deleteUser = [
 //     return res.status(201).send(user)
 // }
 
+const login = [
+    body('email')
+        .notEmpty().withMessage('電郵不能為空').bail()
+        .isEmail().withMessage('電郵格式不正確').bail()
+        .custom(async email => await ctl.emailExisted(email) ? Promise.resolve('電郵可用') : Promise.reject('電郵還沒註冊')),
+    body('password')
+        .notEmpty().withMessage('密碼不能為空'),
+    async (req: Request, res: Response, next: NextFunction) => {
+        const { email, password } = req.body
+        const user = await ctl.loginWithEmail(email, password)
+
+        if (user.err !== undefined) return res.status(401).send('密碼錯誤')
+        
+        req.user = {
+            userID : user.userID,
+            name   : user.name,
+            email  : user.email,
+            token  : user.token
+        }
+
+        return res.status(201).send(user)
+    }
+]
+
 export {
     createUser,
     getUser,
     updateUser,
     deleteUser,
+    login,
 }
