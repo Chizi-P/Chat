@@ -126,6 +126,7 @@ const login = [
         .custom(async email => await ctl.emailExisted(email) ? Promise.resolve('電郵可用') : Promise.reject('電郵還沒註冊')),
     body('password')
         .notEmpty().withMessage('密碼不能為空'),
+    handleValidationResult,
     async (req: Request, res: Response, next: NextFunction) => {
         const { email, password } = req.body
         const user = await ctl.loginWithEmail(email, password)

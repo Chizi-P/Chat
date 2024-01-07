@@ -22,6 +22,7 @@ import {
 } from './socketioTyping.js'
 
 import { Controller } from "./Controller.js"
+import { login } from './src/controllers/usersControllers.js'
 
 export const ctl = new Controller()
 
@@ -45,11 +46,11 @@ api.use((req, res, next) => {
     console.log('收到請求:', req.method, req.url)
     req.body ?? console.table(req.body)
     next()
-});
-
-api.use(validateToken)
+})
 
 // 掛載路由
+api.post('/login', login)
+api.use(validateToken)
 api.use(usersRouter)
 api.use(groupsRouter)
 api.use(messagesRouter)
