@@ -127,24 +127,18 @@ io.on('connection', async socket => {
     }
     
     // 聆聽群組
-    let user = await ctl.getData('user', userID)
-    await socket.join(user.groups)
+    let user = await ctl.getData('user', userID) as User
+    await socket.join([...user.groups, ...user.directGroups])
 
     // 轉發訊息
     socket.on('message', async (toGroupID, content, callback) => {
         const from = socket.data.userID
 
-        ctl.log('[傳訊息]', from, ':', content, '=>', toGroupID)
+        const message = await ctl.createMessage(from, toGroupID, content)
+        
+        io.to(toGroupID).emit('message', message)
 
-        // io.to(toGroupID).emit('message', from, content)
-        io.to(toGroupID).emit('message', toGroupID, from, content, res => {
-            if (res?.ok) {
-                console.log('已轉發')
-            } else {
-                console.log('轉發失敗')
-            }
-        })
-        await ctl.createMessage(from, toGroupID, content)
+        ctl.log('[傳訊息]', from, ':', content, '=>', toGroupID)
         callback?.(ok('已發送'))
     })
 

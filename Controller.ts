@@ -194,7 +194,7 @@ class Controller {
         }) as Notification
 
         notification.id = notification[EntityId] as string
-        notification = await this.db.repos.user.save(notification) as Notification
+        notification = await this.db.repos.notification.save(notification) as Notification
 
         const notificationID = notification[EntityId] as NotificationID
         await this.db.push('user', from, 'notifications', notificationID)
@@ -325,7 +325,7 @@ class Controller {
                 content,
             }) as Task
             task.id = task[EntityId] as string
-            task = await this.db.repos.user.save(task) as Task
+            task = await this.db.repos.task.save(task) as Task
 
             const taskID = task[EntityId] as TaskID
             await this.db.push('user', toUser, 'tasks', taskID)
@@ -388,7 +388,7 @@ class Controller {
             isDirect : true
         }) as Group
         group.id = group[EntityId] as string
-        group = await this.db.repos.user.save(group) as Group
+        group = await this.db.repos.group.save(group) as Group
 
         const groupID = group[EntityId] as GroupID
         return groupID
@@ -416,7 +416,7 @@ class Controller {
             isDirect : false
         }) as Group
         group.id = group[EntityId] as string
-        group = await this.db.repos.user.save(group) as Group
+        group = await this.db.repos.group.save(group) as Group
 
         const groupID = group[EntityId] as GroupID
         
@@ -434,6 +434,7 @@ class Controller {
     }
 
     async createMessage(from: UserID, to: GroupID, content: string): Promise<Message> {
+        // console.log('from', from, [from])
         let message = await this.db.repos.message.save({
             from,
             to,
@@ -442,7 +443,7 @@ class Controller {
             readers: [from]
         }) as Message
         message.id = message[EntityId] as string
-        message = await this.db.repos.user.save(message) as Message
+        message = await this.db.repos.message.save(message) as Message
 
         const messageID = message[EntityId] as MessageID
 

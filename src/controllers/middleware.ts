@@ -9,7 +9,6 @@ function handleValidationResult(req: Request, res: Response, next: NextFunction)
 }
 
 const validateToken = [
-    // body('token').notEmpty().withMessage('需要 token'),
     header('Authorization')
         .notEmpty().withMessage('需要 Authorization').bail()
         .contains("Bearer").withMessage("Authorization Token is not Bearer"),

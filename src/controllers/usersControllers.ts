@@ -18,7 +18,6 @@ const paramIdExisted = param('id').notEmpty().withMessage('需要用户ID').bail
 
 
 const createUser = [
-    // TODO - 名稱的限制
     body('name')
         .notEmpty().withMessage('名稱不能為空'),
     body('email')
@@ -37,6 +36,14 @@ const createUser = [
     }
 ]
 
+// 不需要 id
+const getSelf = [
+    async (req: Request, res: Response, next: NextFunction) => {
+        const user = ctl.omit(await ctl.db.repos.user.fetch(req.user.userID) as User, 'hashedPassword')
+        return res.status(200).send(user)
+    }
+]
+
 // TODO - 展開數據中的 id
 const getUser = [
     paramIdExisted,
@@ -46,6 +53,25 @@ const getUser = [
         const user = id === req.user.userID 
             ? ctl.omit(await ctl.db.repos.user.fetch(req.user.userID) as User, 'hashedPassword')
             : await ctl.getPublicData('user', id)
+        return res.status(200).send(user)
+    }
+]
+
+// 不需要 id
+const updateSelf = [
+    body('name').optional().isString(),
+    body('email').optional().isEmail(),
+    handleValidationResult,
+    async (req: Request, res: Response, next: NextFunction) => {
+        // TODO - 修改所需要的其他流程
+        // email 驗證
+    
+        // FIXME - 控制可以修改的項目
+        const { name, email } = req.body
+        let user = await ctl.db.repos.user.fetch(req.user.userID) as User
+        user.name = name
+        user.email = email
+        user = await ctl.db.repos.user.save(user) as User
         return res.status(200).send(user)
     }
 ]
@@ -77,28 +103,13 @@ const updateUser = [
     }
 ]
 
-// const updateSelf = [
-//     body('name').optional().isString(),
-//     body('email').optional().isEmail(),
-//     handleValidationResult,
-//     async (req: Request, res: Response, next: NextFunction) => {
-//         // const { data } = req.body
-//         // Object.entries(data).forEach(([key, val]: [string, any]) => {
-//         //     user[key] = val
-//         // })
-
-//         // TODO - 修改所需要的其他流程
-//         // email 驗證
-    
-//         // FIXME - 控制可以修改的項目
-//         const { name, email, password } = req.body
-//         let user = await ctl.db.repos.user.fetch(req.user.userID) as User
-//         user.name = name
-//         user.email = email
-//         user = await ctl.db.repos.user.save(user) as User
-//         return res.status(200).send(user)
-//     }
-// ]
+const deleteSelf = [
+    async (req: Request, res: Response, next: NextFunction) => {
+        const user = await ctl.db.repos.user.fetch(req.user.userID)
+        await ctl.db.repos.user.remove(req.user.userID)
+        return res.status(201).send(user)
+    }
+]
 
 const deleteUser = [
     paramIdExisted,
@@ -111,13 +122,6 @@ const deleteUser = [
         return res.status(201).send(user)
     }
 ]
-
-
-// async function deleteSelf(req: Request, res: Response, next: NextFunction) {
-//     const user = await ctl.db.repos.user.fetch(req.user.userID)
-//     await ctl.db.repos.user.remove(req.user.userID)
-//     return res.status(201).send(user)
-// }
 
 const login = [
     body('email')
@@ -146,8 +150,11 @@ const login = [
 
 export {
     createUser,
+    getSelf,
     getUser,
+    updateSelf,
     updateUser,
+    deleteSelf,
     deleteUser,
     login,
 }
