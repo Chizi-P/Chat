@@ -33,7 +33,7 @@ const schemasArgs = {
         isOnline       : { type: 'boolean' },  // 是否在線
         lastOnlineTime : { type: 'date' },     // date
         serverUserID   : { type: 'string' },   // server 給 user 的 ID 比如 socket.io 的 socket.id
-        // lastEditedTime : { type: 'date' },     // 最後編輯時間
+        lastUpdatedTime: { type: 'date' },     // 最後更新時間
     },
     group: {
         id        : { type: 'string' },
@@ -43,7 +43,8 @@ const schemasArgs = {
         createAt  : { type: 'date' },     // timestamp
         members   : { type: 'string[]' }, // userID[]
         messages  : { type: 'string[]' }, // msgID[]
-        isDirect  : { type: 'boolean'}    // 是否為兩人的一對一聊天室
+        isDirect  : { type: 'boolean'},   // 是否為兩人的一對一聊天室
+        lastUpdatedTime : { type: 'date' }, // 最後更新時間
         // hierarchy : {}
     },
     message: {
@@ -52,7 +53,8 @@ const schemasArgs = {
         to       : { type: 'string' },   // groupID
         content  : { type: 'string' },   // msg content | JSON
         createAt : { type: 'date' },     // timestamp
-        readers  : { type: 'string[]' }  // userID[]
+        readers  : { type: 'string[]' }, // userID[]
+        lastUpdatedTime: { type: 'date' },     // 最後更新時間
     },
     notification: {
         id        : { type: 'string' },
@@ -62,15 +64,17 @@ const schemasArgs = {
         content   : { type: 'string' },   // 附帶要顯示的信息
         openURL   : { type: 'string' },   // url
         createAt  : { type: 'date' },     // userID | system
+        lastUpdatedTime: { type: 'date' }, // 最後更新時間
     },
     task: {
         id         : { type: 'string' },
         from       : { type: 'string' },   // userID | groupID
-        to         : { type: 'string' }, // userID
+        to         : { type: 'string' },   // userID
         eventType  : { type: 'string' },   // 
         creator    : { type: 'string' },   // userID
         createAt   : { type: 'date' },     // timestamp
         content    : { type: 'string' },   // string | JSON
+        lastUpdatedTime: { type: 'date' }, // 最後更新時間
     },
 } as const
 
