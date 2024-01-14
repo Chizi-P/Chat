@@ -46,6 +46,7 @@ const getGroup = [
     async (req: Request, res: Response, next: NextFunction) => {
         const { id } = req.params
         let group = await ctl.db.repos.group.fetch(id) as Group
+        group.messages = group.messages.reverse()
         if (await ctl.isMember(req.user.userID, id)) {
             // 如果是私人群 設定對方用戶名稱為群組名稱
             if (group.isDirect) {
