@@ -51,7 +51,8 @@ const schemasArgs = {
         id       : { type: 'string' },
         from     : { type: 'string' },   // userID
         to       : { type: 'string' },   // groupID
-        content  : { type: 'string' },   // msg content | JSON
+        type     : { type: 'string' },   // message type: 'text' | 'image' | 'sticker'
+        content  : { type: 'string' },   // : string | imageURL | stickerID
         createAt : { type: 'date' },     // timestamp
         readers  : { type: 'string[]' }, // userID[]
         lastUpdatedTime: { type: 'date' },     // 最後更新時間
@@ -76,6 +77,12 @@ const schemasArgs = {
         content    : { type: 'string' },   // string | JSON
         lastUpdatedTime: { type: 'date' }, // 最後更新時間
     },
+    file: {
+        type: { type: 'string' },
+        url : { type: 'string' },
+        creator: { type: 'string' },
+        createAt: { type: 'date' },
+    }
 } as const
 
 type ExtractType<T> = 

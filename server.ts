@@ -9,6 +9,7 @@ import usersRouter    from './src/routes/usersRoutes.js'
 import groupsRouter   from './src/routes/groupsRoutes.js'
 import messagesRouter from './src/routes/messagesRoutes.js'
 import tasksRouter    from './src/routes/tasksRoutes.js'
+import filesRouter    from './src/routes/filesRoutes.js'
 
 import { ok, not } from './src/routes/func.js'
 
@@ -55,6 +56,7 @@ api.use(usersRouter)
 api.use(groupsRouter)
 api.use(messagesRouter)
 api.use(tasksRouter)
+api.use(filesRouter)
 
 // ------------------------------- //
 
@@ -131,10 +133,10 @@ io.on('connection', async socket => {
     await socket.join([...user.groups, ...user.directGroups])
 
     // 轉發訊息
-    socket.on('message', async (toGroupID, content, callback) => {
+    socket.on('message', async (toGroupID, type, content, callback) => {
         const from = socket.data.userID
 
-        const message = await ctl.createMessage(from, toGroupID, content)
+        const message = await ctl.createMessage(from, toGroupID, type, content)
         
         io.to(toGroupID).emit('message', message)
 

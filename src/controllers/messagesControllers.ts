@@ -20,12 +20,14 @@ const paramIdExisted = param('id').notEmpty().withMessage('需要訊息ID').bail
 const createMessage = [
     body('to')
         .notEmpty().withMessage('發送對象不能為空'),
+    body('type')
+        .notEmpty().withMessage('沒有訊息類型'),
     body('content')
         .notEmpty().withMessage('訊息內容不能為空'),
     handleValidationResult,
     async (req: Request, res: Response, next: NextFunction) => {
-        const { to, content } = req.body
-        const message = await ctl.createMessage(req.user.userID, to, content) as Message
+        const { to, type, content } = req.body
+        const message = await ctl.createMessage(req.user.userID, to, type, content) as Message
         return res.status(201).send(message)
     }
 ]

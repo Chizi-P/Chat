@@ -17,6 +17,17 @@ type Group          = RepositoriesDataType['group']
 type Message        = RepositoriesDataType['message']
 type Notification   = RepositoriesDataType['notification'] & { eventType: ChatEvents }
 type Task           = RepositoriesDataType['task'] & { eventType: ChatEvents }
+type File           = RepositoriesDataType['file']
+
+enum FileTypes {
+    image,
+}
+
+enum MessageType {
+    text    = 'text',
+    image   = 'image',
+    sticker = 'sticker',
+}
 
 enum ChatEvents {
     SendMessage            = 'sendMessage',         // 發送訊息
@@ -58,6 +69,7 @@ export type {
     Message,
     Notification,
     Task,
+    File,
     ResultWithChatError, 
     Config,
     ChatRegisterEvent
@@ -65,5 +77,6 @@ export type {
 
 export {
     ChatEvents,
-    ChatError
+    ChatError,
+    MessageType
 }

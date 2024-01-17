@@ -17,10 +17,12 @@ import type {
     Group,
     Message,
     Notification,
+    Task,
+    File,
     ChatRegisterEvent,
     ResultWithChatError,
 } from "./DatabaseType.js"
-import { ChatEvents, ChatError, Task } from "./DatabaseType.js"
+import { ChatEvents, ChatError, MessageType } from "./DatabaseType.js"
 import { RepositoriesDataType, RepositoriesType } from './schema.js'
 
 
@@ -38,7 +40,8 @@ class Controller {
     
 
     constructor(){
-        this.config = { privateKey: cfg.privateKey }
+        // FIXME - privateKey
+        this.config = { privateKey: 'chat' }
         this.db = RedisDB(this.config)
     }
     
@@ -284,9 +287,6 @@ class Controller {
         return { err: ChatError.AccountOrPasswordError }
     }
 
-    
-    // async task(taskData: { from: UserID, to: UserID,            eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
-    // async task(taskData: { from: UserID, to: UserID[],          eventType: ChatEvents, creator?: UserID, content?: string }): Promise<Awaited<ReturnType<NonNullable<ValueOf<ChatRegisterEvent>['action']>>>[]>
     async createTask(
         taskData: { 
             from      : UserID, 
@@ -433,15 +433,15 @@ class Controller {
         return group.members.includes(userID)
     }
 
-    async createMessage(from: UserID, to: GroupID, content: string): Promise<Message> {
-        // console.log('from', from, [from])
+    async createMessage(from: UserID, to: GroupID, type: MessageType, content: string): Promise<Message> {
         let message = await this.db.repos.message.save({
             from,
             to,
+            type,
             content,
             createAt: new Date(),
             readers: [from]
-        }) as Message
+        } as Message) as Message
         message.id = message[EntityId] as string
         message = await this.db.repos.message.save(message) as Message
 
@@ -454,42 +454,6 @@ class Controller {
         return message
     }
 
-    // FIXME - delete
-    // async sendMessage(from: UserID, to: GroupID, content: string): Promise<MessageID> {
-
-    //     let message = await this.db.repos.message.save({
-    //         from,
-    //         to,
-    //         content,
-    //         createAt: new Date(),
-    //         readers: [from]
-    //     }) as Message
-
-    //     const messageID = message[EntityId] as MessageID
-
-    //     // FIXME: 兩個方法
-    //     const method = 1
-    //     if (method === 1) {
-    //         // 1: 直接寫到 group 的 messages 中
-    //         await this.db.push('group', to, 'messages', messageID)
-    //         // 發送通知
-    //         await this.notify(from, to, content, ChatEvents.SendMessage)
-
-    //     } else if (method === 2) {
-    //         // 2: 寫成 task，等第一個用戶在線再寫到 group 的 messages 中
-    //         await this.createTask({
-    //             from,
-    //             to,
-    //             creator   : from,
-    //             eventType : ChatEvents.SendMessage,
-    //             content
-    //         })
-    //         // 發送通知
-    //         await this.notify(from, to, content, ChatEvents.SendMessage)
-    //     }
-    //     return messageID
-    // }
-
     async readMsg(reader: UserID, messageID: MessageID) {
         return await this.db.push('message', messageID, 'readers', reader)
     }
@@ -500,6 +464,17 @@ class Controller {
         return user.notifications
     }
 
+    async createFile(creator: UserID, type: string) {
+        let file = await this.db.repos.file.save({
+            type: type,
+            url: '',
+            creator: creator,
+            createAt: new Date(),
+        } as File)
+
+        const fileID = file[EntityId]
+        return fileID
+    }
 }
 
 export {
