@@ -464,13 +464,14 @@ class Controller {
         return user.notifications
     }
 
-    async createFile(creator: UserID, type: string) {
+    async createFile(creator: UserID, type: string, suffix: string) {
         let file = await this.db.repos.file.save({
-            type: type,
-            url: '',
-            creator: creator,
+            type,
+            // url: '',
+            suffix,
+            creator,
             createAt: new Date(),
-        } as File)
+        })
 
         const fileID = file[EntityId]
         return fileID

@@ -13,8 +13,9 @@ const storage = multer.diskStorage({
         cb(null, 'uploads/')
     },
     filename: async (req, file, cb) => {
-        const fileID = await ctl.createFile(req.user.userID, 'avatar')
-        cb(null, fileID + path.extname(file.originalname))
+        const suffix = path.extname(file.originalname)
+        const fileID = await ctl.createFile(req.user.userID, 'file', suffix)
+        cb(null, fileID + suffix)
     }
 })
 
@@ -30,6 +31,7 @@ function encodeImageToBlurhash(path: string) {
             .resize(32, 32, { fit: 'inside' })
             .toBuffer((err, buffer, { width, height }) => {
                 if (err) return reject(err)
+                // if (width == undefined || height == undefined) return reject()
                 resolve(encode(new Uint8ClampedArray(buffer), width, height, 4, 4))
             })
     })

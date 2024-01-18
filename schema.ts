@@ -78,10 +78,11 @@ const schemasArgs = {
         lastUpdatedTime: { type: 'date' }, // 最後更新時間
     },
     file: {
-        type: { type: 'string' },
-        url : { type: 'string' },
-        creator: { type: 'string' },
-        createAt: { type: 'date' },
+        type     : { type: 'string' },
+        // url      : { type: 'string' },
+        suffix   : { type: 'string' },
+        creator  : { type: 'string' },
+        createAt : { type: 'date' },
     }
 } as const
 
