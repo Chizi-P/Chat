@@ -1,7 +1,7 @@
-import { Message, MessageType } from "./DatabaseType.js"
+import { Message, MessageTypes } from "./DatabaseType.js"
 
 export interface ClientToServerEvents {
-    message          : (toGroupID: string, type: MessageType, content: string, callback?: CallableFunction) => void
+    message          : (toGroupID: string, type: MessageTypes, content: string, callback?: CallableFunction) => void
     friendInvitation : (to: string, callback?: CallableFunction) => void
     groupInvitation  : (groupID: string, invitedMembers: string | string[]) => void
     confirm          : (taskID: string) => void

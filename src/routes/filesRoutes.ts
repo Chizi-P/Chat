@@ -1,19 +1,18 @@
 import { Router } from 'express'
+import path from 'path'
 import { 
     upload, 
-    getImage
+    getFile,
 } from '../controllers/filesControllers.js'
-
-import { ctl } from '../../server.js'
 
 const router = Router()
 
 router.post('/file', upload.single('file'), (req, res) => {
-    console.log(req.file, req.body)
-    res.status(200).send(`file/${req.file?.filename}`)
+    console.log(req.file)
+    res.status(200).send(path.parse(req.file!.filename).name)
 })
 
-router.get('/file/:filePath', getImage)
+router.get('/file/:id', getFile)
 
 // router.put('/file/:filePath', )
 // router.delete('/file/:filePath', )

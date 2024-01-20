@@ -8,6 +8,12 @@
 - Docker-compose
 - RESTful API
 
+```
+之後可能會用到
+- MySQL
+- K8S
+```
+
 ---
 
 ### ░ HTTP API
@@ -63,7 +69,7 @@
 ### ░ Socket
 
 #### Client To Server Events：
-`message: (toGroupID: string, type: MessageType, content: string, callback?: CallableFunction) => void` 傳送訊息
+`message: (toGroupID: string, type: MessageTypes, content: string, callback?: CallableFunction) => void` 傳送訊息
 
 #### Server To Client Events：
 `message: (message: Message) => void` 轉發訊息

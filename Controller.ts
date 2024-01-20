@@ -13,6 +13,7 @@ import type {
     MessageID,
     NotificationID,
     TaskID,
+    FileID,
     User,
     Group,
     Message,
@@ -21,8 +22,9 @@ import type {
     File,
     ChatRegisterEvent,
     ResultWithChatError,
+    FileTypes,
 } from "./DatabaseType.js"
-import { ChatEvents, ChatError, MessageType } from "./DatabaseType.js"
+import { ChatEvents, ChatError, MessageTypes } from "./DatabaseType.js"
 import { RepositoriesDataType, RepositoriesType } from './schema.js'
 
 
@@ -110,6 +112,12 @@ class Controller {
     public async taskExisted(taskId: TaskID) {
         return await this.db.db.exists(`task:${taskId}`) 
     }
+
+    public async fileExisted(fileID: FileID) {
+        return await this.db.db.exists(`file:${fileID}`) 
+    }
+
+
 
     public omit<T extends ValueOf<RepositoriesDataType>>(obj: T, omitKeys: string | string[]): Partial<T> {
         if (!Array.isArray(omitKeys)) omitKeys = [omitKeys]
@@ -433,7 +441,7 @@ class Controller {
         return group.members.includes(userID)
     }
 
-    async createMessage(from: UserID, to: GroupID, type: MessageType, content: string): Promise<Message> {
+    async createMessage(from: UserID, to: GroupID, type: MessageTypes, content: string): Promise<Message> {
         let message = await this.db.repos.message.save({
             from,
             to,
@@ -464,16 +472,35 @@ class Controller {
         return user.notifications
     }
 
-    async createFile(creator: UserID, type: string, suffix: string) {
+    async createFile({
+        creator, 
+        type, 
+        suffix,
+        originalname,
+        destination,
+        size,
+        owner = []
+    }: {
+        creator      : UserID, 
+        type         : FileTypes | string,
+        suffix       : string,
+        originalname : string,
+        destination  : string,
+        size         : number,
+        owner?       : UserID[]
+    }) {
         let file = await this.db.repos.file.save({
-            type,
-            // url: '',
-            suffix,
             creator,
+            type,
+            suffix,
+            originalname,
+            destination,
+            size,
+            owner: [...new Set([creator, ...owner])],
             createAt: new Date(),
-        })
+        } as File)
 
-        const fileID = file[EntityId]
+        const fileID = file[EntityId] as FileID
         return fileID
     }
 }

@@ -12,6 +12,7 @@ type GroupID        = string
 type MessageID      = string
 type NotificationID = string
 type TaskID         = string
+type FileID         = string
 type User           = RepositoriesDataType['user']
 type Group          = RepositoriesDataType['group']
 type Message        = RepositoriesDataType['message']
@@ -21,12 +22,12 @@ type File           = RepositoriesDataType['file']
 
 // FIXME
 enum FileTypes {
-    image,
-    video,
-    sound,
+    image = 'image',
+    video = 'video',
+    sound = 'sound',
 }
 
-enum MessageType {
+enum MessageTypes {
     text    = 'text',
     image   = 'image',
     video   = 'video',
@@ -70,6 +71,7 @@ export type {
     MessageID,
     NotificationID ,
     TaskID,
+    FileID,
     User,
     Group,
     Message,
@@ -84,5 +86,6 @@ export type {
 export {
     ChatEvents,
     ChatError,
-    MessageType
+    FileTypes,
+    MessageTypes
 }
