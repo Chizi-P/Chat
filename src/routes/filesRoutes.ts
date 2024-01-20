@@ -15,4 +15,7 @@ router.post('/file', upload.single('file'), (req, res) => {
 
 router.get('/file/:filePath', getImage)
 
+// router.put('/file/:filePath', )
+// router.delete('/file/:filePath', )
+
 export default router
