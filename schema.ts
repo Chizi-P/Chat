@@ -82,6 +82,7 @@ const schemasArgs = {
         // url      : { type: 'string' },
         suffix   : { type: 'string' },
         creator  : { type: 'string' },
+        owner    : { type: 'string[]' },
         createAt : { type: 'date' },
     }
 } as const

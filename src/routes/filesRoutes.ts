@@ -10,7 +10,7 @@ const router = Router()
 
 router.post('/file', upload.single('file'), (req, res) => {
     console.log(req.file, req.body)
-    res.status(200).send(`${req.path}/${req.file?.filename}`)
+    res.status(200).send(`file/${req.file?.filename}`)
 })
 
 router.get('/file/:filePath', getImage)

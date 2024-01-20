@@ -19,14 +19,20 @@ type Notification   = RepositoriesDataType['notification'] & { eventType: ChatEv
 type Task           = RepositoriesDataType['task'] & { eventType: ChatEvents }
 type File           = RepositoriesDataType['file']
 
+// FIXME
 enum FileTypes {
     image,
+    video,
+    sound,
 }
 
 enum MessageType {
     text    = 'text',
     image   = 'image',
+    video   = 'video',
+    sound   = 'sound',
     sticker = 'sticker',
+    gif     = 'gif',
 }
 
 enum ChatEvents {
