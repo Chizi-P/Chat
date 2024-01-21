@@ -495,7 +495,8 @@ class Controller {
             type,
             suffix,
             originalname,
-            owner: [...new Set([creator, ...owner])],
+            // FIXME - owner groupID[]
+            owner: [...owner],
             createAt: new Date(),
         } as File)
 

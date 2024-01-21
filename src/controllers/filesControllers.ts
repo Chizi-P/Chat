@@ -75,7 +75,8 @@ const getFile = [
     paramIdExisted,
     query('blurhash').optional().isString().isIn(['true', 'false']).withMessage('blurhash 可選 true'),
     handleValidationResult,
-    isOwner,
+    // FIXME - isOwner
+    // isOwner,
     async (req: Request, res: Response) => {
         const { id } = req.params
 
@@ -96,7 +97,7 @@ const getFile = [
                 break
 
             case FileTypes.video:
-                return res.download(filePath, console.error)
+                return res.download(filePath, err => err && console.error(err))
                 break
             
             case FileTypes.sound:
@@ -105,7 +106,6 @@ const getFile = [
             default:
                 break
         }
-
         return res.sendFile(filePath)
     }
 ]
