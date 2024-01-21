@@ -28,18 +28,30 @@ const storage = multer.diskStorage({
     },
     filename: async (req, file, cb) => {
         const suffix = path.extname(file.originalname)
-        const fileType = file.mimetype.split('/')[0]
         const fileID = await ctl.createFile({
             creator      : req.user.userID, 
-            type         : fileType,
-            suffix       : suffix,
-            originalname : file.originalname,
-            destination  : file.destination,
-            size         : file.size
+            mimetype     : file.mimetype,
+            originalname : file.originalname
         })
         cb(null, fileID + suffix)
     }
 })
+
+const upload = multer({ storage: storage })
+
+const uploadFile = [
+    upload.single('file'), 
+    async (req: Request, res: Response) => {
+        const fileID = path.parse(req.file!.filename).name
+        let file = await ctl.db.repos.file.fetch(fileID) as File
+        file.id          = fileID
+        file.destination = req.file!.destination
+        file.path        = req.file!.path
+        file.size        = req.file!.size
+        file = await ctl.db.repos.file.save(file) as File
+        res.status(200).send(fileID)
+    }
+]
 
 function encodeImageToBlurhash(path: string) {
     return new Promise((resolve, reject) => {
@@ -68,7 +80,7 @@ const getFile = [
         const { id } = req.params
 
         const file = await ctl.db.repos.file.fetch(id) as File
-        const filePath = path.join(process.cwd(), '/uploads', id + file.suffix)
+        const filePath = path.join(process.cwd(), file.path)
 
         if (!fs.existsSync(filePath)) {
             console.error('Error: File does not exist:', filePath)
@@ -81,19 +93,24 @@ const getFile = [
                     const blurhash = await encodeImageToBlurhash(filePath)
                     return res.send(blurhash)
                 }
-                break;
+                break
+
+            case FileTypes.video:
+                return res.download(filePath, console.error)
+                break
+            
+            case FileTypes.sound:
+                break
 
             default:
-                break;
+                break
         }
 
-        res.sendFile(filePath)
+        return res.sendFile(filePath)
     }
 ]
 
-const upload = multer({ storage: storage })
-
 export {
-    upload,
+    uploadFile,
     getFile
 }

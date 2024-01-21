@@ -78,13 +78,16 @@ const schemasArgs = {
         lastUpdatedTime: { type: 'date' }, // 最後更新時間
     },
     file: {
-        creator      : { type: 'string' },
-        type         : { type: 'string' },
-        suffix       : { type: 'string' },
-        originalname : { type: 'string' },
-        destination  : { type: 'string' },
+        id           : { type: 'string' },
+        creator      : { type: 'string' },   // userID
+        type         : { type: 'string' },   // image
+        mimetype     : { type: 'string' },   // image/jpeg
+        suffix       : { type: 'string' },   // .jpg
+        originalname : { type: 'string' },   // name.jpg
+        destination  : { type: 'string' },   // uploads/
+        path         : { type: 'string' },   // uploads\name.jpg
         size         : { type: 'number' },
-        owner        : { type: 'string[]' },
+        owner        : { type: 'string[]' }, // (groupID | userID)[]
         createAt     : { type: 'date' },
     }
 } as const

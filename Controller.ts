@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
 import { EntityId } from 'redis-om'
+import path from 'path'
 
 import { RedisDB, RedisDatabase } from './RedisDatabase.js'
 import { hash, ValueOf } from './util.js'
@@ -474,28 +475,26 @@ class Controller {
 
     async createFile({
         creator, 
-        type, 
-        suffix,
+        mimetype,
         originalname,
-        destination,
-        size,
+        // destination,
+        // size,
         owner = []
     }: {
         creator      : UserID, 
-        type         : FileTypes | string,
-        suffix       : string,
+        mimetype     : string,
         originalname : string,
-        destination  : string,
-        size         : number,
         owner?       : UserID[]
     }) {
+        const suffix = path.extname(originalname)
+        const type = mimetype.split('/')[0]
+
         let file = await this.db.repos.file.save({
             creator,
+            mimetype,
             type,
             suffix,
             originalname,
-            destination,
-            size,
             owner: [...new Set([creator, ...owner])],
             createAt: new Date(),
         } as File)
