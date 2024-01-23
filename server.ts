@@ -11,10 +11,8 @@ import messagesRouter from './src/routes/messagesRoutes.js'
 import tasksRouter    from './src/routes/tasksRoutes.js'
 import filesRouter    from './src/routes/filesRoutes.js'
 
-import { ok, not } from './src/routes/func.js'
+import { User } from './DatabaseType.js'
 
-import { ChatError, User } from './DatabaseType.js'
-import * as cfg from './.config.js'
 import {
     ServerToClientEvents,   
     ClientToServerEvents,
@@ -141,7 +139,7 @@ io.on('connection', async socket => {
         io.to(toGroupID).emit('message', message)
 
         ctl.log('[傳訊息]', from, ':', content, '=>', toGroupID)
-        callback?.(ok('已發送'))
+        callback?.({ ok: true, msg: '已發送'})
     })
 
     socket.on('friendInvitation', async (to, callback) => {
@@ -173,7 +171,7 @@ io.on('connection', async socket => {
         // 如果對方也在線上，通知對方有人想添加他為好友
         // io.to(await user(to, 'socketID')).emit('friendRequest', { ok: true, msg: `${from} 把您設為好友`, system: true })
 
-        callback?.(ok('已發送好友邀請'))
+        callback?.({ ok: true, msg: '已發送好友邀請' })
     })
 
     socket.on('groupInvitation',async (groupID, invitedMembers) => {

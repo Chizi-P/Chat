@@ -9,6 +9,7 @@ import { encode } from 'blurhash'
 import { param, query } from 'express-validator'
 import { File, FileTypes } from '../../DatabaseType.js'
 import { handleValidationResult } from './middleware.js'
+import config from '../../config.js'
 
 const paramIdExisted = param('id').notEmpty().withMessage('需要文件ID').bail()
     .custom(async id => await ctl.fileExisted(id) ? Promise.resolve() : Promise.reject('該文件不存在'))
@@ -24,7 +25,7 @@ const isOwner = async (req: Request, res: Response, next: NextFunction) => {
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/')
+        cb(null, config.uploadsFolder)
     },
     filename: async (req, file, cb) => {
         const suffix = path.extname(file.originalname)

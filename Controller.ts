@@ -6,7 +6,7 @@ import path from 'path'
 import { RedisDB, RedisDatabase } from './RedisDatabase.js'
 import { hash, ValueOf } from './util.js'
 
-import * as cfg from './.config.js'
+import config from './config.js'
 import type {
     Config,
     UserID,
@@ -40,11 +40,9 @@ class Controller {
         message : [],
         task    : [],
     }
-    
 
     constructor(){
-        // FIXME - privateKey
-        this.config = { privateKey: 'chat' }
+        this.config = { privateKey: config.privateKey }
         this.db = RedisDB(this.config)
     }
     

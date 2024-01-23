@@ -28,6 +28,7 @@
   "main": "redisChat.js",
   "scripts": {
     "start": "tsc && node ./build/server",
+    "reset": "tsc && node ./build/reset",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
