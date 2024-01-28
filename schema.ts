@@ -51,8 +51,8 @@ const schemasArgs = {
         id       : { type: 'string' },
         from     : { type: 'string' },   // userID
         to       : { type: 'string' },   // groupID
-        type     : { type: 'string' },   // message type: 'text' | 'image' | 'sticker'
-        content  : { type: 'string' },   // : string | imageURL | stickerID
+        type     : { type: 'string' },   // message type: 'text' | 'sticker' | FileTypes
+        content  : { type: 'string' },   // : string | stickerID | FileID
         createAt : { type: 'date' },     // timestamp
         readers  : { type: 'string[]' }, // userID[]
         lastUpdatedTime: { type: 'date' },     // 最後更新時間
@@ -87,7 +87,7 @@ const schemasArgs = {
         destination  : { type: 'string' },   // uploads/
         path         : { type: 'string' },   // uploads\name.jpg
         size         : { type: 'number' },
-        owner        : { type: 'string[]' }, // (groupID | userID)[]
+        owner        : { type: 'string[]' }, // groupID[]
         createAt     : { type: 'date' },
     }
 } as const

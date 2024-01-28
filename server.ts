@@ -1,5 +1,6 @@
 import express, { Router } from 'express'
 import { createServer } from 'http'
+import os from 'os'
 import { Server } from 'socket.io'
 import { parse } from 'cookie'
 import jwt from 'jsonwebtoken'
@@ -196,9 +197,8 @@ io.on('connection', async socket => {
 
 })
 
-// 啟動伺服器監聽指定的埠號
 const PORT = process.env.PORT || 3000
 httpServer.listen(PORT, () => {
-    ctl.log(`伺服器正在監聽埠號 ${PORT}`)
+    ctl.log(`伺服器 - ${os.networkInterfaces()['Wi-Fi']?.filter(e => e.family === 'IPv4')[0].address}:${PORT}`)
 })
 
