@@ -27,14 +27,13 @@ enum FileTypes {
     sound = 'sound',
 }
 
-enum MessageTypes {
+enum BaseMessageTypes {
     text    = 'text',
-    image   = 'image',
-    video   = 'video',
-    sound   = 'sound',
     sticker = 'sticker',
     gif     = 'gif',
 }
+
+type MessageTypes = BaseMessageTypes | FileTypes
 
 enum ChatEvents {
     SendMessage            = 'sendMessage',         // 發送訊息

@@ -70,23 +70,13 @@ io.use(async (socket, next) => {
 
     // login with token //
     if (token || (email && password)) {
-        payload = await ctl.login({ token, email, password})
+        payload = await ctl.login({ token, email, password })
         if (payload.err !== undefined) return next(new Error('驗證失敗'))
     } else {
         socket.disconnect(true)
         ctl.log('用戶沒有提供 token 或 email 和 password')
         return next(new Error('用戶沒有提供 token 或 email 和 password'))
     }
-
-    // if (token !== undefined) {
-    //     payload = await ctl.login(token)
-    //     if (payload.err !== undefined) return next(new Error('token 驗證失敗'))
-    
-    // // login with email and password //
-    // } else if (email !== undefined && password !== undefined) {
-    //     payload = await ctl.login(email, password)
-    //     if (payload.err !== undefined) return next(new Error('帳號或密碼錯誤')) // FIXME - error 的類型
-    // } 
 
     // 用戶成功登錄，獲取用戶資料
     let user = await ctl.getData('user', payload.userID)
@@ -95,9 +85,6 @@ io.use(async (socket, next) => {
     if (user.serverUserID) io.sockets.sockets.get(user.serverUserID)?.disconnect(true)
 
     // 成功登錄
-    // TODO - 回傳 token 給 client
-    // ... user.token
-
     socket.data.userID = payload.userID
     socket.data.name   = payload.name
     socket.data.email  = payload.email
@@ -111,36 +98,28 @@ io.use(async (socket, next) => {
 
 io.on('connection', async socket => {
     
-    const userID = socket.data.userID
+    const userID   = socket.data.userID
     const userName = socket.data.name
 
-    ctl.log('[已連接] userID: ', userID, " name: ", userName)
+    ctl.log(`[已連接] user: ${userID} name: ${userName}`)
 
     // 讀取離線消息
-    // while (true) {
-    //     const msg = await ctl.rPop(`${socket.data.userID}OfflineMessageQueue`)
-    //     if (msg !== null) socket.emit('msg', { ok: true, msg })
-    //     else break
-    // }
-    let notifications = await ctl.checkForOfflineMessages(userID)
+    const notifications = await ctl.checkForOfflineMessages(userID)
     if (notifications.length > 0) {
         socket.emit('notifications', notifications)
     }
     
     // 聆聽群組
-    let user = await ctl.getData('user', userID) as User
+    const user = await ctl.getData('user', userID) as User
     await socket.join([...user.groups, ...user.directGroups])
 
     // 轉發訊息
     socket.on('message', async (toGroupID, type, content, callback) => {
         const from = socket.data.userID
-
         const message = await ctl.createMessage(from, toGroupID, type, content)
-        
         io.to(toGroupID).emit('message', message)
-
-        ctl.log('[傳訊息]', from, ':', content, '=>', toGroupID)
-        callback?.({ ok: true, msg: '已發送'})
+        ctl.log(`[傳訊息] group: ${toGroupID} user: ${from}: ${content}`)
+        callback?.({ ok: true, msg: '已發送' })
     })
 
     socket.on('friendInvitation', async (to, callback) => {
@@ -149,20 +128,8 @@ io.on('connection', async socket => {
 
         const from = socket.data.userID
 
-        let user = await ctl.db.repos.user.fetch(to)
+        const user = await ctl.db.repos.user.fetch(to)
         const toSocketID = user.serverUserID as string
-
-        // if (!await ctl.exists(`users:${to}`)) socket.emit('msg', { ok: false, msg: '用戶不存在' })
-
-        // // 根據 states
-        // const states = ['不是好友', '成為好友', '需要確認', '等待確認', '拒絕', '被拒絕', '確認', '被確認']
-
-        // 將好友關係存儲在伺服器中
-        // await ctl.hSet(`users:${from}:friends`, to, 2)
-        // await ctl.hSet(`users:${to}:friends`, to, 3)
-        
-        // 通知發送請求的用戶，好友已經被成功添加
-        // socket.emit('msg', { ok: true, msg: `已請求添加 ${to} 為好友`, system: true })
 
         await ctl.FriendInvitation(from, to)
 
@@ -189,7 +156,7 @@ io.on('connection', async socket => {
     socket.on('disconnect', async () => {
         // 刪除 socketID
         let user = await ctl.db.repos.user.fetch(socket.data.userID)
-        user.isOnline = false
+        user.isOnline     = false
         user.serverUserID = ''
         user = await ctl.db.repos.user.save(user)
         ctl.log('[已離線]', socket.data.userID)
@@ -199,6 +166,6 @@ io.on('connection', async socket => {
 
 const PORT = process.env.PORT || 3000
 httpServer.listen(PORT, () => {
-    ctl.log(`伺服器 - ${os.networkInterfaces()['Wi-Fi']?.filter(e => e.family === 'IPv4')[0].address}:${PORT}`)
+    ctl.log(`伺服器 - ${os.networkInterfaces()['Wi-Fi']?.filter(e => e.family === 'IPv4')[0].address ?? 'localhost'}:${PORT}`)
 })
 
