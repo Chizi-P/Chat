@@ -20,18 +20,17 @@ async function reset() {
     }
     
     const multi = db.multi()
-    
-    const users = await db.keys('user:*')
+
+    const users  = await db.keys('user:*')
     const groups = await db.keys('group:*')
     
-    users.forEach(user => multi.hDel(user, 'notifications'))
+    users .forEach(user  => multi.hDel(user,  'notifications'))
     groups.forEach(group => multi.hDel(group, 'messages'))
     
     await multi.exec()
-
     await db.disconnect()
     
-    fs.rmSync(path.join(process.cwd(), config.uploadsFolder), { recursive: true, force: true })
+    fs.rmSync   (path.join(process.cwd(), config.uploadsFolder), { recursive: true, force: true })
     fs.mkdirSync(path.join(process.cwd(), config.uploadsFolder))
 }
 

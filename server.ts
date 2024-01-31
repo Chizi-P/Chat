@@ -5,12 +5,14 @@ import { Server } from 'socket.io'
 import { parse } from 'cookie'
 import jwt from 'jsonwebtoken'
 
+import { Controller }    from "./Controller.js"
 import { validateToken } from './src/controllers/middleware.js'
-import usersRouter    from './src/routes/usersRoutes.js'
-import groupsRouter   from './src/routes/groupsRoutes.js'
-import messagesRouter from './src/routes/messagesRoutes.js'
-import tasksRouter    from './src/routes/tasksRoutes.js'
-import filesRouter    from './src/routes/filesRoutes.js'
+import { login }         from './src/controllers/usersControllers.js'
+import usersRouter       from './src/routes/usersRoutes.js'
+import groupsRouter      from './src/routes/groupsRoutes.js'
+import messagesRouter    from './src/routes/messagesRoutes.js'
+import tasksRouter       from './src/routes/tasksRoutes.js'
+import filesRouter       from './src/routes/filesRoutes.js'
 
 import { User } from './DatabaseType.js'
 
@@ -20,9 +22,6 @@ import {
     InterServerEvents,
     SocketData
 } from './socketioTyping.js'
-
-import { Controller } from "./Controller.js"
-import { login } from './src/controllers/usersControllers.js'
 
 export const ctl = new Controller()
 
@@ -43,12 +42,11 @@ const api = Router()
 app.use('/api/v1', api)
 
 api.use((req, res, next) => {
-    console.log('收到請求:', req.method, req.url)
+    ctl.log('收到請求:', req.method, req.url)
     req.body ?? console.table(req.body)
     next()
 })
 
-// 掛載路由
 api.post('/login', login)
 api.use(validateToken)
 api.use(usersRouter)
@@ -68,31 +66,28 @@ io.use(async (socket, next) => {
     // OPT 類型錯誤
     let payload: jwt.UserJwtPayload | Awaited<ReturnType<typeof ctl.login>>
 
-    // login with token //
+    // login //
     if (token || (email && password)) {
         payload = await ctl.login({ token, email, password })
         if (payload.err !== undefined) return next(new Error('驗證失敗'))
     } else {
         socket.disconnect(true)
-        ctl.log('用戶沒有提供 token 或 email 和 password')
-        return next(new Error('用戶沒有提供 token 或 email 和 password'))
+        const err = '用戶沒有提供 token 或 email 和 password'
+        ctl.log(err)
+        return next(new Error(err))
     }
 
     // 用戶成功登錄，獲取用戶資料
     let user = await ctl.getData('user', payload.userID)
-
     // 防止多端登錄 先強制登出相同帳號
     if (user.serverUserID) io.sockets.sockets.get(user.serverUserID)?.disconnect(true)
-
     // 成功登錄
     socket.data.userID = payload.userID
     socket.data.name   = payload.name
     socket.data.email  = payload.email
-
     // 儲存對應的 socket id
     user = await ctl.setUser(payload.userID, { serverUserID: socket.id })
-
-    ctl.log('[登錄]', socket.data.userID)
+    ctl.log(`[登錄] user: ${socket.data.userID}`)
     return next()
 })
 
@@ -100,7 +95,6 @@ io.on('connection', async socket => {
     
     const userID   = socket.data.userID
     const userName = socket.data.name
-
     ctl.log(`[已連接] user: ${userID} name: ${userName}`)
 
     // 讀取離線消息
@@ -127,18 +121,14 @@ io.on('connection', async socket => {
         // TODO - 判斷 to user 是否存在
 
         const from = socket.data.userID
-
         const user = await ctl.db.repos.user.fetch(to)
         const toSocketID = user.serverUserID as string
-
         await ctl.FriendInvitation(from, to)
-
         io.to(toSocketID).emit('friendInvitation', from)
         // socket.to(toSocketID).emit('friendInvitation', from)
 
         // 如果對方也在線上，通知對方有人想添加他為好友
         // io.to(await user(to, 'socketID')).emit('friendRequest', { ok: true, msg: `${from} 把您設為好友`, system: true })
-
         callback?.({ ok: true, msg: '已發送好友邀請' })
     })
 
@@ -149,7 +139,7 @@ io.on('connection', async socket => {
 
     // TODO: 判斷 task 是否屬於這個用戶
     socket.on('confirm', async taskID => {
-        console.log('confirm', taskID)
+        ctl.log('confirm', taskID)
         await ctl.finishTask(taskID)
     })
 

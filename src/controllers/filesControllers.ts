@@ -105,6 +105,7 @@ const getFile = [
                 break
 
             default:
+                return res.download(filePath, err => err && console.error(err))
                 break
         }
         return res.sendFile(filePath)
